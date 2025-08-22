@@ -64,10 +64,10 @@ FW_VERSIONS = {
   CAR.TESLA_MODEL_S_HW2: {
     (Ecu.eps, 0x730, None): [
       b'\x10#\x01',
-    ],
-  },
-  CAR.TESLA_MODEL_S_HW3: {
-    (Ecu.eps, 0x730, None): [
+#    ],
+#  },
+#  CAR.TESLA_MODEL_S_HW3: {
+#    (Ecu.eps, 0x730, None): [
       b'SX_0.0.0 (99),S013.7',
       b'SX_0.0.0 (99),SR013.7',
     ],
