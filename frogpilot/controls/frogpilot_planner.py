@@ -54,7 +54,7 @@ class FrogPilotPlanner:
       self.frogpilot_acceleration.max_accel = 0
       self.frogpilot_acceleration.min_accel = 0
 
-    self.frogpilot_events.update(v_cruise, sm)
+    self.frogpilot_events.update(long_control_active, v_cruise, sm)
 
     self.frogpilot_following.update(long_control_active, v_ego, sm)
 
