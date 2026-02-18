@@ -1,7 +1,7 @@
 """Install exception handler for process crash."""
-import os
 import sentry_sdk
 import traceback
+from datetime import datetime
 from enum import Enum
 from sentry_sdk.integrations.threading import ThreadingIntegration
 
@@ -11,12 +11,15 @@ from openpilot.system.hardware import HARDWARE, PC
 from openpilot.common.swaglog import cloudlog
 from openpilot.system.version import get_build_metadata, get_version
 
+from openpilot.frogpilot.common.frogpilot_utilities import get_sentry_dsn
+from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH
+
 
 class SentryProject(Enum):
   # python project
-  SELFDRIVE = os.environ.get("SENTRY_DSN", "")
+  SELFDRIVE = "https://6f3c7076c1e14b2aa10f5dde6dda0cc4@o33823.ingest.sentry.io/77924"
   # native project
-  SELFDRIVE_NATIVE = os.environ.get("SENTRY_DSN", "")
+  SELFDRIVE_NATIVE = "https://3e4b586ed21a4479ad5d85083b639bc6@o33823.ingest.sentry.io/157615"
 
 
 def report_tombstone(fn: str, message: str, contents: str) -> None:
@@ -35,7 +38,7 @@ def capture_block() -> None:
     sentry_sdk.flush()
 
 
-def capture_exception(*args, **kwargs) -> None:
+def capture_exception(*args, crash_log=True, **kwargs) -> None:
   exc_text = traceback.format_exc()
 
   errors_to_ignore = [
@@ -44,6 +47,7 @@ def capture_exception(*args, **kwargs) -> None:
   if any(error in exc_text for error in errors_to_ignore):
     return
 
+  save_exception(exc_text, crash_log)
   cloudlog.error("crash", exc_info=kwargs.get('exc_info', 1))
 
   try:
@@ -57,6 +61,20 @@ def set_tag(key: str, value: str) -> None:
   sentry_sdk.set_tag(key, value)
 
 
+def save_exception(exc_text: str, crash_log) -> None:
+  files = [
+    ERROR_LOGS_PATH / datetime.now().astimezone().strftime("%Y-%m-%d--%H-%M-%S.log"),
+    ERROR_LOGS_PATH / "error.txt"
+  ]
+
+  for file_path in files:
+    if file_path.name == "error.txt" and crash_log:
+      lines = exc_text.splitlines()[-10:]
+      file_path.write_text("\n".join(lines))
+    else:
+      file_path.write_text(exc_text)
+
+
 def init(project: SentryProject) -> bool:
   build_metadata = get_build_metadata()
   # forks like to mess with this, so double check
@@ -67,7 +85,7 @@ def init(project: SentryProject) -> bool:
   short_branch = build_metadata.channel
 
   if short_branch in ["COMMA", "HEAD"]:
-    return
+    return False
   elif short_branch == "FrogPilot-Development":
     env = "Development"
   elif build_metadata.release_channel:
@@ -83,7 +101,7 @@ def init(project: SentryProject) -> bool:
   if project == SentryProject.SELFDRIVE:
     integrations.append(ThreadingIntegration(propagate_hub=True))
 
-  sentry_sdk.init(project.value,
+  sentry_sdk.init(get_sentry_dsn(),
                   default_integrations=False,
                   release=get_version(),
                   integrations=integrations,
