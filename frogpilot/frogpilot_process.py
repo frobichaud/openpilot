@@ -10,7 +10,7 @@ from openpilot.common.time_helpers import system_time_valid
 
 from openpilot.frogpilot.assets.theme_manager import THEME_COMPONENT_PARAMS, ThemeManager
 from openpilot.frogpilot.common.frogpilot_backups import backup_toggles
-from openpilot.frogpilot.common.frogpilot_functions import update_openpilot
+from openpilot.frogpilot.common.frogpilot_functions import update_maps, update_openpilot
 from openpilot.frogpilot.common.frogpilot_utilities import ThreadManager, flash_panda, is_url_pingable, lock_doors
 from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, FrogPilotVariables
 from openpilot.frogpilot.controls.frogpilot_planner import FrogPilotPlanner
@@ -19,7 +19,7 @@ from openpilot.frogpilot.system.frogpilot_tracking import FrogPilotTracking
 
 ASSET_CHECK_RATE = (1 / DT_MDL)
 
-def check_assets(theme_manager, thread_manager, params_memory, frogpilot_toggles):
+def check_assets(now, theme_manager, thread_manager, params, params_memory, frogpilot_toggles):
   for asset_type, asset_param in THEME_COMPONENT_PARAMS.items():
     asset_to_download = params_memory.get(asset_param)
     if asset_to_download:
@@ -27,6 +27,9 @@ def check_assets(theme_manager, thread_manager, params_memory, frogpilot_toggles
 
   if params_memory.get_bool("FlashPanda"):
     thread_manager.run_with_lock(flash_panda, (params_memory))
+
+  if params_memory.get_bool("DownloadMaps"):
+    thread_manager.run_with_lock(update_maps, (now, params, params_memory, True))
 
 def transition_offroad(frogpilot_planner, thread_manager, time_validated, sm, params, frogpilot_toggles):
   params.put("LastGPSPosition", json.dumps(frogpilot_planner.gps_position))
@@ -46,6 +49,8 @@ def update_checks(now, theme_manager, thread_manager, params, params_memory, fro
     time.sleep(60)
 
   theme_manager.update_themes(frogpilot_toggles, boot_run)
+
+  thread_manager.run_with_lock(update_maps, (now, params, params_memory))
 
   if frogpilot_toggles.automatic_updates:
     thread_manager.run_with_lock(update_openpilot, (thread_manager, params))
@@ -73,7 +78,7 @@ def frogpilot_thread():
   sm = messaging.SubMaster(["carControl", "carState", "controlsState", "deviceState", "driverMonitoringState",
                             "gpsLocation", "gpsLocationExternal", "liveParameters", "managerState", "modelV2",
                             "onroadEvents", "pandaStates", "radarState", "selfdriveState", "frogpilotCarState",
-                            "frogpilotSelfdriveState", "frogpilotModelV2", "frogpilotOnroadEvents"],
+                            "frogpilotSelfdriveState", "frogpilotModelV2", "frogpilotOnroadEvents", "mapdOut"],
                             poll="modelV2")
 
   params = Params(return_defaults=True)
@@ -125,7 +130,7 @@ def frogpilot_thread():
     started_previously = started
 
     if rate_keeper.frame % ASSET_CHECK_RATE == 0:
-      check_assets(theme_manager, thread_manager, params_memory, frogpilot_toggles)
+      check_assets(now, theme_manager, thread_manager, params, params_memory, frogpilot_toggles)
 
     if params_memory.get_bool("FrogPilotTogglesUpdated") or theme_manager.theme_updated:
       frogpilot_toggles = update_toggles(frogpilot_variables, started, theme_manager, thread_manager, time_validated, params)
