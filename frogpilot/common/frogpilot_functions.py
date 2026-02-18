@@ -17,11 +17,41 @@ from openpilot.system.version import get_build_metadata
 
 from openpilot.frogpilot.assets.theme_manager import ThemeManager
 from openpilot.frogpilot.common.frogpilot_backups import backup_frogpilot
-from openpilot.frogpilot.common.frogpilot_utilities import is_FrogsGoMoo, is_url_pingable, run_cmd, use_konik_server
+from openpilot.frogpilot.common.frogpilot_utilities import get_frogpilot_api_info, is_FrogsGoMoo, is_url_pingable, run_cmd, use_konik_server
 from openpilot.frogpilot.common.frogpilot_variables import (
   ERROR_LOGS_PATH, FROGPILOT_API, FROGS_GO_MOO_PATH, HD_LOGS_PATH, KONIK_LOGS_PATH, MAPS_PATH, THEME_SAVE_PATH,
   FrogPilotVariables, get_frogpilot_toggles
 )
+
+
+def capture_report(discord_user, report, params, frogpilot_toggles):
+  if not is_url_pingable(FROGPILOT_API):
+    return
+
+  api_token, build_metadata, device_type, dongle_id = get_frogpilot_api_info()
+
+  error_file_path = ERROR_LOGS_PATH / "error.txt"
+  error_content = "No error log found."
+  if error_file_path.exists():
+    error_content = error_file_path.read_text()[:1000]
+
+  payload = {
+    "api_token": api_token,
+    "build_metadata": build_metadata,
+    "device": device_type,
+    "discord_user": discord_user,
+    "error_content": error_content,
+    "frogpilot_dongle_id": dongle_id,
+    "frogpilot_toggles": frogpilot_toggles,
+    "report": report,
+  }
+
+  try:
+    response = requests.post(f"{FROGPILOT_API}/discord/report", json=payload, headers={"Content-Type": "application/json", "User-Agent": "frogpilot-api/1.0"}, timeout=30)
+    response.raise_for_status()
+    print("Successfully sent error report!")
+  except requests.exceptions.RequestException as exception:
+    print(f"Error sending report: {exception}")
 
 
 def frogpilot_boot_functions(build_metadata, params):
@@ -41,6 +71,8 @@ def frogpilot_boot_functions(build_metadata, params):
         params.put("MapsSelected", ",".join(new_items))
     except (json.JSONDecodeError, TypeError, ValueError):
       pass
+
+  params.put("BuildMetadata", json.dumps(dataclasses.asdict(build_metadata)))
 
   FrogPilotVariables()
   ThemeManager(params, params_memory, boot_run=True).update_active_theme(time_validated=system_time_valid(), frogpilot_toggles=get_frogpilot_toggles(), boot_run=True)
