@@ -119,6 +119,7 @@ procs = [
 
 # FrogPilot variables
 procs += [
+  PythonProcess("device_syncd", "frogpilot.system.device_syncd", always_run),
   PythonProcess("frogpilot_process", "frogpilot.frogpilot_process", always_run),
 ]
 
