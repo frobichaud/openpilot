@@ -5,7 +5,7 @@ from openpilot.selfdrive.car.cruise import CRUISE_LONG_PRESS, ButtonType
 from openpilot.selfdrive.selfdrived.events import ET
 
 from openpilot.frogpilot.common.frogpilot_utilities import is_FrogsGoMoo
-from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, NON_DRIVING_GEARS
+from openpilot.frogpilot.common.frogpilot_variables import ERROR_LOGS_PATH, GearShifter, NON_DRIVING_GEARS
 from openpilot.frogpilot.controls.lib.conditional_experimental_mode import CEStatus
 
 class FrogPilotCard:
@@ -22,6 +22,7 @@ class FrogPilotCard:
     self.force_coast = False
     self.pause_lateral = False
     self.pause_longitudinal = False
+    self.traffic_mode_enabled = False
 
     self.gap_counter = 0
 
@@ -42,6 +43,8 @@ class FrogPilotCard:
       self.pause_lateral = not self.pause_lateral
     elif sm["carControl"].longActive and getattr(frogpilot_toggles, f"pause_longitudinal_via_{key}"):
       self.pause_longitudinal = not self.pause_longitudinal
+    elif getattr(frogpilot_toggles, f"traffic_mode_via_{key}"):
+      self.traffic_mode_enabled = not self.traffic_mode_enabled
 
   def handle_experimental_mode(self, sm, frogpilot_toggles):
     if frogpilot_toggles.conditional_experimental_mode:
@@ -106,7 +109,9 @@ class FrogPilotCard:
     frogpilotCarState.distanceLongPressed = self.very_long_press_threshold > self.gap_counter >= self.long_press_threshold
     frogpilotCarState.distanceVeryLongPressed = self.gap_counter >= self.very_long_press_threshold
     frogpilotCarState.forceCoast = self.force_coast
+    frogpilotCarState.isParked = carState.gearShifter == GearShifter.park
     frogpilotCarState.pauseLateral = self.pause_lateral
     frogpilotCarState.pauseLongitudinal = self.pause_longitudinal
+    frogpilotCarState.trafficModeEnabled = self.traffic_mode_enabled
 
     return frogpilotCarState
