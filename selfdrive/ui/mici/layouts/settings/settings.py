@@ -14,6 +14,8 @@ from openpilot.selfdrive.ui.mici.layouts.settings.firehose import FirehoseLayout
 from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.widgets import Widget, NavWidget
 
+from openpilot.frogpilot.ui.mici.layouts.settings.frogpilot import FrogPilotLayout
+
 
 class PanelType(IntEnum):
   TOGGLES = 0
@@ -22,6 +24,9 @@ class PanelType(IntEnum):
   DEVELOPER = 3
   USER_MANUAL = 4
   FIREHOSE = 5
+
+  # FrogPilot variables
+  FROGPILOT = 6
 
 
 @dataclass
@@ -59,7 +64,7 @@ class SettingsLayout(NavWidget):
       device_btn,
       PairBigButton(),
       #BigDialogButton("manual", "", "icons_mici/settings/manual_icon.png", "Check out the mici user\nmanual at comma.ai/setup"),
-      firehose_btn,
+      #firehose_btn,
       developer_btn,
     ], snap_items=False)
 
@@ -79,6 +84,13 @@ class SettingsLayout(NavWidget):
 
     # Callbacks
     self._close_callback: Callable | None = None
+
+    # FrogPilot variables
+    frogpilot_btn = SettingsBigButton("FrogPilot", "", "../../frogpilot/assets/icons_mici/settings/icon_frog.png", icon_size=(65, 65))
+    frogpilot_btn.set_click_callback(lambda: self._set_current_panel(PanelType.FROGPILOT))
+    self._scroller.add_widget(frogpilot_btn)
+
+    self._panels[PanelType.FROGPILOT] = PanelInfo("FrogPilot", FrogPilotLayout(back_callback=lambda: self._set_current_panel(None)))
 
   def show_event(self):
     super().show_event()
