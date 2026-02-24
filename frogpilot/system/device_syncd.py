@@ -8,7 +8,7 @@ from openpilot.common.params import Params, ParamKeyFlag, ParamKeyType
 from openpilot.common.realtime import Ratekeeper
 from openpilot.common.time_helpers import system_time_valid
 
-from openpilot.frogpilot.common.frogpilot_utilities import get_frogpilot_api_info, is_url_pingable
+from openpilot.frogpilot.common.frogpilot_utilities import get_frogpilot_api_error, get_frogpilot_api_info, is_url_pingable
 from openpilot.frogpilot.common.frogpilot_variables import EXCLUDED_KEYS, FROGPILOT_API, update_frogpilot_toggles
 
 POND_PRESENCE_INTERVAL_ACTIVE = 60
@@ -16,6 +16,102 @@ POND_PRESENCE_INTERVAL_IDLE = 240
 
 REMOTE_TOGGLE_CHECK_INTERVAL_ACTIVE = 10
 REMOTE_TOGGLE_CHECK_INTERVAL_IDLE = 60
+
+POND_HEADERS = {
+  "Content-Type": "application/json",
+  "User-Agent": "frogpilot-api/1.0",
+}
+
+
+def get_pond_api_payload():
+  api_token, build_metadata, device_type, dongle_id = get_frogpilot_api_info()
+  if not api_token or not dongle_id:
+    return None
+
+  return {
+    "api_token": api_token,
+    "build_metadata": build_metadata,
+    "device": device_type,
+    "dongle_id": dongle_id,
+    "frogpilot_dongle_id": dongle_id,
+  }
+
+
+def pair_to_the_pond():
+  if not is_url_pingable(FROGPILOT_API):
+    return None, "Network error"
+
+  payload = get_pond_api_payload()
+  if payload is None:
+    return None, "Authentication failed. Please restart your device."
+
+  try:
+    response = requests.post(f"{FROGPILOT_API}/pond/pair/request", json=payload, headers=POND_HEADERS, timeout=10)
+    if not response.ok:
+      return None, get_frogpilot_api_error(response)
+
+    code = response.json().get("code")
+    if not code:
+      return None, "Failed to retrieve pairing code"
+
+    return code, None
+
+  except Exception as exception:
+    print(f"Failed to request pairing code: {exception}")
+    return None, "Network error"
+
+
+def poll_status(code, poll_active=lambda: True, max_polls=100, poll_interval=3.0):
+  if not code:
+    return None
+
+  payload = get_pond_api_payload()
+  if payload is None:
+    return None
+
+  for _ in range(max_polls):
+    if not poll_active():
+      return None
+
+    try:
+      response = requests.get(
+        f"{FROGPILOT_API}/pond/pair/status",
+        params={**payload, "code": code},
+        headers={"User-Agent": POND_HEADERS["User-Agent"]},
+        timeout=10,
+      )
+      if response.ok:
+        status = response.json().get("status")
+        if status in ("paired", "expired"):
+          return status
+      else:
+        print(f"Failed to poll pairing status: {get_frogpilot_api_error(response)}")
+    except Exception as exception:
+      print(f"Failed to poll pairing status: {exception}")
+
+    time.sleep(poll_interval)
+
+  return "expired"
+
+
+def unpair_from_the_pond():
+  if not is_url_pingable(FROGPILOT_API):
+    return "Network error"
+
+  payload = get_pond_api_payload()
+  if payload is None:
+    return "Authentication failed. Please restart your device."
+
+  try:
+    response = requests.delete(f"{FROGPILOT_API}/pond/devices", json=payload, headers=POND_HEADERS, timeout=10)
+    if not response.ok:
+      return get_frogpilot_api_error(response)
+
+    return None
+
+  except Exception as exception:
+    print(f"Failed to unpair device: {exception}")
+    return "Network error"
 
 
 def check_toggles(started, params, sm=None, boot_run=False):

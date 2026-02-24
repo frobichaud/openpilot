@@ -42,6 +42,7 @@ THRESHOLD = 1 - 1 / math.e                # Requires the condition to be true fo
 NON_DRIVING_GEARS = [GearShifter.neutral, GearShifter.park, GearShifter.reverse, GearShifter.unknown]
 
 FROGPILOT_API = "https://frogpilot.com/api"
+THE_POND_URL = "https://frogpilot.com/the_pond"
 
 RESOURCES_REPO = "FrogAi/FrogPilot-Resources"
 
