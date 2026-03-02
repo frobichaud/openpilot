@@ -48,17 +48,73 @@ class CAR(Platforms):
       TeslaCarDocsHW4("Tesla Model 3 (with HW4) 2024-25"),
     ],
     CarSpecs(mass=1899., wheelbase=2.875, steerRatio=12.0),
+    {Bus.party: 'tesla_model3_party', Bus.radar: 'tesla_radar_continental_generated'},
   )
   TESLA_MODEL_Y = TeslaPlatformConfig(
     [
       TeslaCarDocsHW3("Tesla Model Y (with HW3) 2020-23"),
       TeslaCarDocsHW4("Tesla Model Y (with HW4) 2024-25"),
-     ],
+    ],
     CarSpecs(mass=2072., wheelbase=2.890, steerRatio=12.0),
+    {Bus.party: 'tesla_model3_party', Bus.radar: 'tesla_radar_continental_generated'},
   )
   TESLA_MODEL_X = TeslaPlatformConfig(
     [TeslaCarDocsHW4("Tesla Model X (with HW4) 2024")],
     CarSpecs(mass=2495., wheelbase=2.960, steerRatio=12.0),
+  )
+  TESLA_MODEL_X_HW1 = TeslaPlatformConfig(
+    [CarDocs("Tesla Model X (with HW1) 2014-16", "All", car_parts=CarParts.common([CarHarness.tesla_model_x_hw1]))],
+    CarSpecs(mass=2447., wheelbase=2.960, steerRatio=15.0),
+    {
+      Bus.chassis: 'tesla_can',
+      Bus.party: 'tesla_can',
+      Bus.pt: 'tesla_can',
+      Bus.radar: 'tesla_radar_bosch_generated',
+    },
+  )
+  TESLA_MODEL_X_HW2 = TeslaPlatformConfig(
+    [CarDocs("Tesla Model X (with HW2) 2016-19", "All", car_parts=CarParts.common([CarHarness.tesla_model_sx_hw2]))],
+    CarSpecs(mass=2100., wheelbase=2.960, steerRatio=15.0),
+    {
+      Bus.chassis: 'tesla_can',
+      Bus.party: 'tesla_can',
+      Bus.pt: 'tesla_powertrain',
+      Bus.radar: 'tesla_radar_bosch_generated',
+    },
+  )
+  TESLA_MODEL_S = TeslaPlatformConfig(
+    [TeslaCarDocsHW4("Tesla Model S (with HW4) 2024")],
+    CarSpecs(mass=2166., wheelbase=2.960, steerRatio=12.0),
+  )
+  TESLA_MODEL_S_HW1 = TeslaPlatformConfig(
+    [CarDocs("Tesla Model S (with HW1) 2014-16", "All", car_parts=CarParts.common([CarHarness.tesla_model_s_hw1]))],
+    CarSpecs(mass=2100., wheelbase=2.960, steerRatio=15.0),
+    {
+      Bus.chassis: 'tesla_can',
+      Bus.party: 'tesla_can',
+      Bus.pt: 'tesla_can',
+      Bus.radar: 'tesla_radar_bosch_generated',
+    },
+  )
+  TESLA_MODEL_S_HW2 = TeslaPlatformConfig(
+    [CarDocs("Tesla Model S (with HW2) 2017-19", "All", car_parts=CarParts.common([CarHarness.tesla_model_sx_hw2]))],
+    CarSpecs(mass=2100., wheelbase=2.960, steerRatio=15.0),
+    {
+      Bus.chassis: 'tesla_can',
+      Bus.party: 'tesla_can',
+      Bus.pt: 'tesla_powertrain',
+      Bus.radar: 'tesla_radar_bosch_generated',
+    },
+  )
+  TESLA_MODEL_S_HW3 = TeslaPlatformConfig(
+    [CarDocs("Tesla Model S (with HW3) 2020-23", "All", car_parts=CarParts.common([CarHarness.tesla_model_sx_hw3]))],
+    CarSpecs(mass=2100., wheelbase=2.960, steerRatio=15.0),
+    {
+      Bus.chassis: 'tesla_can',
+      Bus.party: 'tesla_raven_party',
+      Bus.pt: 'tesla_powertrain',
+      Bus.radar: 'tesla_radar_continental_generated',
+    },
   )
 
 
@@ -68,15 +124,41 @@ FW_QUERY_CONFIG = FwQueryConfig(
       [StdQueries.TESTER_PRESENT_REQUEST, StdQueries.SUPPLIER_SOFTWARE_VERSION_REQUEST],
       [StdQueries.TESTER_PRESENT_RESPONSE, StdQueries.SUPPLIER_SOFTWARE_VERSION_RESPONSE],
       bus=0,
-    )
+    ),
+    Request(
+      [StdQueries.TESTER_PRESENT_REQUEST, StdQueries.UDS_VERSION_REQUEST],
+      [StdQueries.TESTER_PRESENT_RESPONSE, StdQueries.UDS_VERSION_RESPONSE],
+      rx_offset=0x08,
+      bus=0,
+    ),
+    Request(
+      [StdQueries.TESTER_PRESENT_REQUEST, StdQueries.MANUFACTURER_SOFTWARE_VERSION_REQUEST],
+      [StdQueries.TESTER_PRESENT_RESPONSE, StdQueries.MANUFACTURER_SOFTWARE_VERSION_RESPONSE],
+      rx_offset=0x08,
+      bus=0,
+    ),
   ]
 )
+
+# Cars with this EPS FW have FSD 14 and use TeslaFlags.FSD_14
+FSD_14_FW = {
+  CAR.TESLA_MODEL_Y: [
+    b'TeMYG4_Legacy3Y_0.0.0 (6),Y4003.04.0',
+    b'TeMYG4_Main_0.0.0 (77),Y4003.05.4',
+  ]
+}
 
 
 class CANBUS:
   party = 0
   vehicle = 1
+  radar = 1
   autopilot_party = 2
+
+  # only needed on raven
+  powertrain = 4
+  chassis = 5
+  autopilot_powertrain = 6
 
 
 GEAR_MAP = {
@@ -117,14 +199,27 @@ class CarControllerParams:
   JERK_LIMIT_MIN = -4.9  # m/s^3, ACC faults at 5.0
 
 
+class TeslaLegacyParams(IntFlag):
+  NO_SDM1 = 1
+
+
 class TeslaSafetyFlags(IntFlag):
   LONG_CONTROL = 1
+  FSD_14 = 2
+  FLAG_EXTERNAL_PANDA = 4
+  FLAG_HW1 = 8
+  FLAG_HW2 = 16
+  FLAG_HW3 = 32
 
 
 class TeslaFlags(IntFlag):
   LONG_CONTROL = 1
+  FSD_14 = 2
+  MISSING_DAS_SETTINGS = 4
 
 
 DBC = CAR.create_dbc_map()
 
 STEER_THRESHOLD = 1
+
+LEGACY_CARS = (CAR.TESLA_MODEL_S_HW1, CAR.TESLA_MODEL_S_HW2, CAR.TESLA_MODEL_S_HW3, CAR.TESLA_MODEL_X_HW1, CAR.TESLA_MODEL_X_HW2)
