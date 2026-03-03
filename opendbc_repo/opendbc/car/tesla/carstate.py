@@ -297,9 +297,14 @@ class CarState(CarStateBase):
         ap_pt_bus = CANBUS.autopilot_powertrain  # 6 (external panda CAN2)
         chassis_bus = 1                  # internal panda CAN1 = chassis/vehicle bus
 
+      # Pre-register messages that will be accessed via vl[] to avoid lazy VLDict
+      # registration issues (DAS_control lookup fails on some devices despite being in the DBC).
+      # Using float('nan') frequency sets ignore_alive=True so missing messages don't cause timeout.
+      ap_party_msgs = [("DAS_control", float('nan')), ("DAS_steeringControl", float('nan'))]
+
       return {
         Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
-        Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.autopilot_party),
+        Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], ap_party_msgs, CANBUS.autopilot_party),
         Bus.chassis: CANParser(DBC[CP.carFingerprint][Bus.chassis], [], chassis_bus),
         Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], pt_bus),
         Bus.ap_pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], ap_pt_bus),
