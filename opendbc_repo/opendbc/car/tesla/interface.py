@@ -67,12 +67,14 @@ class CarInterface(CarInterfaceBase):
     elif candidate in (CAR.TESLA_MODEL_S_HW2, CAR.TESLA_MODEL_X_HW2):
       ret.safetyConfigs = [
         get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW2)),
-        get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW2 | TeslaSafetyFlags.FLAG_EXTERNAL_PANDA)),
+        # TODO: add back external panda config when num_pandas > 1
+        # get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW2 | TeslaSafetyFlags.FLAG_EXTERNAL_PANDA)),
       ]
     elif candidate in (CAR.TESLA_MODEL_S_HW3,):
       ret.safetyConfigs = [
         get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW3)),
-        get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW3 | TeslaSafetyFlags.FLAG_EXTERNAL_PANDA)),
+        # TODO: add back external panda config when num_pandas > 1
+        # get_safety_config(structs.CarParams.SafetyModel.teslaLegacy, int(TeslaSafetyFlags.FLAG_HW3 | TeslaSafetyFlags.FLAG_EXTERNAL_PANDA)),
       ]
 
     ret.steerLimitTimer = 0.4
