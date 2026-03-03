@@ -189,7 +189,10 @@ class CarState(CarStateBase):
     ret.vEgo, ret.aEgo = self.update_speed_kf(ret.vEgoRaw)
 
     # Gas pedal
-    ret.gasPressed = cp_pt.vl["DI_torque1"]["DI_pedalPos"] > 0
+    # HW2: Read DI_torque1 from chassis parser (bus 1, tesla_can.dbc ID 0x108) instead of
+    # cp_pt (bus 4) which has no CAN data. Signal names are identical between both DBCs.
+    # HW1/HW3: cp_pt points to working buses, but DI_torque1 is also on chassis bus.
+    ret.gasPressed = cp_chassis.vl["DI_torque1"]["DI_pedalPos"] > 0
 
     # Brake pedal
     ret.brake = 0
@@ -252,7 +255,9 @@ class CarState(CarStateBase):
       ret.seatbeltUnlatched = cp_chassis.vl["SDM1"]["SDM_bcklDrivStatus"] != 1
 
     # AEB
-    ret.stockAeb = cp_ap_pt.vl["DAS_control"]["DAS_aebEvent"] == 1
+    # HW2: Read DAS_control from ap_party parser (bus 2, tesla_can.dbc ID 0x2B9) instead of
+    # cp_ap_pt (bus 6) which has no CAN data. Signal names are identical between both DBCs.
+    ret.stockAeb = cp_ap_party.vl["DAS_control"]["DAS_aebEvent"] == 1
 
     # LKAS
     ret.stockLkas = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == 2  # LANE_KEEP_ASSIST
@@ -260,7 +265,7 @@ class CarState(CarStateBase):
     # Buttons # ToDo: add Gap adjust button
 
     # Messages needed by carcontroller
-    self.das_control = copy.copy(cp_ap_pt.vl["DAS_control"])
+    self.das_control = copy.copy(cp_ap_party.vl["DAS_control"])
 
     # FrogPilot variables
     fp_ret = custom.FrogPilotCarState.new_message()
@@ -285,11 +290,12 @@ class CarState(CarStateBase):
         ap_pt_bus = CANBUS.autopilot_powertrain
         chassis_bus = 1
       else:
-        # HW2: dual panda, chassis messages share the party bus (bus 0),
-        # NOT the external panda's CAN1 (bus 5). Matches xnor's implementation.
-        pt_bus = CANBUS.powertrain
-        ap_pt_bus = CANBUS.autopilot_powertrain
-        chassis_bus = CANBUS.party
+        # HW2: dual panda, xnor harness wires internal panda CAN1 to chassis bus
+        # (same physical wiring as HW3). Use literal 1 since CANBUS.chassis (5) is
+        # the external panda's CAN1, which has no data on the xnor harness.
+        pt_bus = CANBUS.powertrain       # 4 (external panda CAN0)
+        ap_pt_bus = CANBUS.autopilot_powertrain  # 6 (external panda CAN2)
+        chassis_bus = 1                  # internal panda CAN1 = chassis/vehicle bus
 
       return {
         Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
