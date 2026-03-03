@@ -260,12 +260,32 @@ class CarState(CarStateBase):
   @staticmethod
   def get_can_parsers(CP):
     if CP.carFingerprint in LEGACY_CARS:
+      is_hw1 = CP.carFingerprint in (CAR.TESLA_MODEL_S_HW1, CAR.TESLA_MODEL_X_HW1)
+
+      # Fix CANBUS ordering bug: get_can_parsers() runs before __init__ CANBUS mutations.
+      # Compute correct bus numbers inline for each platform.
+      if is_hw1:
+        # HW1: single panda, powertrain shares party bus
+        pt_bus = CANBUS.party
+        ap_pt_bus = CANBUS.autopilot_party
+        chassis_bus = CANBUS.party
+      elif CP.carFingerprint == CAR.TESLA_MODEL_S_HW3:
+        # HW3 Raven: chassis on vehicle bus (1), not default (5)
+        pt_bus = CANBUS.powertrain
+        ap_pt_bus = CANBUS.autopilot_powertrain
+        chassis_bus = 1
+      else:
+        # HW2: dual panda, default CANBUS values are correct
+        pt_bus = CANBUS.powertrain
+        ap_pt_bus = CANBUS.autopilot_powertrain
+        chassis_bus = CANBUS.chassis
+
       return {
         Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
         Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.autopilot_party),
-        Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CANBUS.powertrain),
-        Bus.ap_pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CANBUS.autopilot_powertrain),
-        Bus.chassis: CANParser(DBC[CP.carFingerprint][Bus.chassis], [], CANBUS.chassis if CP.carFingerprint == CAR.TESLA_MODEL_S_HW3 else CANBUS.party),
+        Bus.chassis: CANParser(DBC[CP.carFingerprint][Bus.chassis], [], chassis_bus),
+        Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], pt_bus),
+        Bus.ap_pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], ap_pt_bus),
       }
 
     return {
