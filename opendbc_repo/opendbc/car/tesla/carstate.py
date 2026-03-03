@@ -44,6 +44,7 @@ class CarState(CarStateBase):
 
     self.hands_on_level = 0
     self.das_control = None
+    self._can_debug_count = 0
 
   def update_autopark_state(self, autopark_state: str, cruise_enabled: bool):
     autopark_now = autopark_state in ("ACTIVE", "COMPLETE", "SELFPARK_STARTED")
@@ -172,6 +173,15 @@ class CarState(CarStateBase):
     cp_pt = can_parsers[Bus.pt]
     cp_ap_pt = can_parsers[Bus.ap_pt]
     cp_chassis = can_parsers[Bus.chassis]
+
+    # Temporary debug logging: print per-parser CAN status for first 20 updates
+    if self._can_debug_count < 20:
+      self._can_debug_count += 1
+      for name, cp in can_parsers.items():
+        if not cp.can_valid:
+          carlog.warning(f"CAN DEBUG [{self._can_debug_count}] parser={name} bus={cp.bus} can_valid={cp.can_valid} "
+                         f"bus_timeout={cp.bus_timeout} msgs={len(cp.message_states)}")
+
     ret = structs.CarState()
 
     # Vehicle speed
@@ -275,10 +285,11 @@ class CarState(CarStateBase):
         ap_pt_bus = CANBUS.autopilot_powertrain
         chassis_bus = 1
       else:
-        # HW2: dual panda, default CANBUS values are correct
+        # HW2: dual panda, chassis messages share the party bus (bus 0),
+        # NOT the external panda's CAN1 (bus 5). Matches xnor's implementation.
         pt_bus = CANBUS.powertrain
         ap_pt_bus = CANBUS.autopilot_powertrain
-        chassis_bus = CANBUS.chassis
+        chassis_bus = CANBUS.party
 
       return {
         Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
