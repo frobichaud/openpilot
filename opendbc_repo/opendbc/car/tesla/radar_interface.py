@@ -1,7 +1,10 @@
 from opendbc.can.parser import CANParser
 from opendbc.car import Bus, structs
-from opendbc.car.tesla.values import DBC, CANBUS, CAR
+from opendbc.car.tesla.values import DBC, CANBUS, CAR, LEGACY_CARS
 from opendbc.car.interfaces import RadarInterfaceBase
+
+RADAR_START_ADDR = 0x410
+RADAR_MSG_COUNT = 80  # 40 points * 2 messages each
 
 
 class RadarInterface(RadarInterfaceBase):
