@@ -122,6 +122,8 @@ def frogpilot_thread():
     started = sm["deviceState"].started
 
     if not started and started_previously:
+      frogpilot_planner.shutdown()
+
       frogpilot_toggles = update_toggles(frogpilot_variables, started, theme_manager, thread_manager, time_validated, params, frogpilot_toggles)
       transition_offroad(frogpilot_planner, theme_manager, thread_manager, time_validated, sm, params, frogpilot_toggles)
 
