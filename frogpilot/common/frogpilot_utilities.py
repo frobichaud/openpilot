@@ -170,29 +170,6 @@ def flash_panda(params_memory):
   params_memory.remove("FlashPanda")
 
 
-def get_frogpilot_api_error(response):
-  status_code = response.status_code
-
-  try:
-    server_error = response.json().get("error", "")
-  except Exception:
-    server_error = ""
-
-  if status_code == 401:
-    return "Authentication failed. Please restart your device."
-  elif status_code == 403:
-    if "build" in server_error.lower():
-      return "Unofficial or modified build detected."
-    return f"Access denied: {server_error}"
-  elif status_code == 429:
-    return "Too many attempts. Please wait and try again."
-  elif status_code == 503:
-    return "Server is temporarily unavailable. Please try again later."
-  elif status_code > 0:
-    return f"Server error ({status_code}): {server_error or 'Unknown error'}"
-  return "Network error"
-
-
 def get_frogpilot_api_info():
   params = Params()
 
