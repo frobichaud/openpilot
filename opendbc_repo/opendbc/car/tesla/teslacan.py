@@ -1,5 +1,13 @@
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.tesla.values import CANBUS, CarControllerParams
+from opendbc.car.tesla.values import CANBUS, CarControllerParams, TeslaFlags
+
+
+def get_steer_ctrl_type(flags: int, ctrl_type: int) -> int:
+  # Returns the flipped signal value for DAS_steeringControlType on FSD 14
+  if flags & TeslaFlags.FSD_14:
+    return {1: 2, 2: 1}.get(ctrl_type, ctrl_type)
+  else:
+    return ctrl_type
 
 
 class TeslaCAN:
