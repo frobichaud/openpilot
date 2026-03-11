@@ -24,8 +24,10 @@ AnnotatedCameraWidget::AnnotatedCameraWidget(VisionStreamType type, QWidget *par
   personality_btn = new DrivingPersonalityButton(this);
   personality_btn->setVisible(false);
 
+#ifdef HAS_OMX
   screen_recorder = new ScreenRecorder(this);
   screen_recorder->setVisible(false);
+#endif
 }
 
 void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState &fs) {
@@ -34,10 +36,6 @@ void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState
   dmon.updateState(s);
 
   // FrogPilot variables
-  const SubMaster &sm = *(s.sm);
-
-  const cereal::CarState::Reader &carState = sm["carState"].getCarState();
-
   frogpilot_nvg->experimentalButtonPosition = QPoint(experimental_btn->x(), experimental_btn->y());
 
   bool onroad_distance_btn_enabled = frogpilot_nvg->dmIconPosition != QPoint(0, 0) && !frogpilot_nvg->hideBottomIcons && frogpilot_toggles.value("onroad_distance_button").toBool();
@@ -49,8 +47,12 @@ void AnnotatedCameraWidget::updateState(const UIState &s, const FrogPilotUIState
 
   dmon.onroad_distance_btn_enabled = onroad_distance_btn_enabled;
 
+#ifdef HAS_OMX
+  const SubMaster &sm = *(s.sm);
+  const cereal::CarState::Reader &carState = sm["carState"].getCarState();
   screen_recorder->move(experimental_btn->x() - UI_BORDER_SIZE - btn_size, experimental_btn->y());
   screen_recorder->setVisible(frogpilot_nvg->standstillDuration == 0 && !(frogpilot_nvg->signalStyle == "static" && carState.getRightBlinker()) && frogpilot_toggles.value("screen_recorder").toBool());
+#endif
 }
 
 void AnnotatedCameraWidget::initializeGL() {

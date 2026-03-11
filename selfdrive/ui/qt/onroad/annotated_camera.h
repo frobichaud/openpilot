@@ -9,7 +9,9 @@
 #include "selfdrive/ui/qt/widgets/cameraview.h"
 
 #include "frogpilot/ui/qt/onroad/frogpilot_buttons.h"
+#ifdef HAS_OMX
 #include "frogpilot/ui/screenrecorder/screenrecorder.h"
+#endif
 
 class AnnotatedCameraWidget : public CameraWidget {
   Q_OBJECT
@@ -42,7 +44,9 @@ private:
   void paintEvent(QPaintEvent *event) override;
 
   DrivingPersonalityButton *personality_btn;
+#ifdef HAS_OMX
   ScreenRecorder *screen_recorder;
+#endif
 
 protected:
   void paintGL() override;

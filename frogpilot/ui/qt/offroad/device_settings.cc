@@ -1,11 +1,15 @@
+#ifdef HAS_OMX
 #include "frogpilot/ui/screenrecorder/screenrecorder.h"
+#endif
 #include "frogpilot/ui/qt/offroad/device_settings.h"
 
 FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent, bool forceOpen) : FrogPilotListWidget(parent), parent(parent) {
   forceOpenDescriptions = forceOpen;
 
+#ifdef HAS_OMX
   ScreenRecorder *screenRecorder = new ScreenRecorder(this);
   screenRecorder->setVisible(false);
+#endif
 
   QStackedLayout *deviceLayout = new QStackedLayout();
   addItem(deviceLayout);
@@ -80,6 +84,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent, bool
       }
       deviceToggle = new FrogPilotParamValueControl(param, title, desc, icon, minBrightness, 101, QString(), brightnessLabels, 1, true);
     } else if (param == "ScreenRecorder") {
+#ifdef HAS_OMX
       std::vector<QString> recorderButtonNames{tr("Start Recording"), tr("Stop Recording")};
       FrogPilotButtonControl *recorderToggle = new FrogPilotButtonControl(param, title, desc, icon, recorderButtonNames, true);
       QObject::connect(recorderToggle, &FrogPilotButtonControl::buttonClicked, [recorderToggle, screenRecorder](int id) {
@@ -101,6 +106,7 @@ FrogPilotDevicePanel::FrogPilotDevicePanel(FrogPilotSettingsWindow *parent, bool
       });
       recorderToggle->setVisibleButton(1, false);
       deviceToggle = recorderToggle;
+#endif
     } else if (param == "ScreenTimeout" || param == "ScreenTimeoutOnroad") {
       deviceToggle = new FrogPilotParamValueControl(param, title, desc, icon, 5, 60, tr(" seconds"), {}, 5);
 
