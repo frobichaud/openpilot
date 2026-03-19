@@ -25,6 +25,9 @@ class FrogPilotVCruise:
     self.pcm_drop_timer = 0.0  # countdown timer for SLC floor after Tesla autonomous cruise drop
     self.prev_v_cruise = 0.0
 
+    self.prev_slc_target = 0.0
+    self.slc_adopted_speed = 0.0  # floor after confirmed SLC target increase (ramp→highway merge)
+
   def update(self, long_control_active, now, time_validated, v_cruise, v_ego, sm, frogpilot_toggles):
     force_stop = self.frogpilot_planner.frogpilot_cem.stop_light_detected and long_control_active and frogpilot_toggles.force_stops
     force_stop &= self.frogpilot_planner.model_stopped
@@ -81,6 +84,15 @@ class FrogPilotVCruise:
       # gets stuck at the ceiling until gas is pressed.
       if self.slc.overridden_speed == 0 and v_cruise > self.slc_target + self.slc_offset > 0:
         self.slc.overridden_speed = v_cruise + v_cruise_diff
+
+      # Auto-adopt new SLC target when speed limit increases significantly
+      # (e.g., ramp→highway merge). Confirmation gating is handled upstream:
+      # self.slc.target only updates after user accepts via handle_limit_change()
+      # when speed_limit_confirmation_higher is enabled.
+      if long_control_active and self.prev_slc_target > 0 and self.slc_target - self.prev_slc_target > PCM_DROP_THRESHOLD:
+        self.slc_adopted_speed = self.slc_target + self.slc_offset
+      if self.slc_target > 0:
+        self.prev_slc_target = self.slc_target
     elif frogpilot_toggles.show_speed_limits:
       self.slc.update_limits(sm["frogpilotCarState"].dashboardSpeedLimit, now, time_validated, v_cruise, v_ego, sm)
 
@@ -95,6 +107,7 @@ class FrogPilotVCruise:
     # Threshold of 7.5 kph cleanly separates the two (avoids float rounding issues).
     # Uses a countdown timer instead of a sticky flag so stalk presses resume
     # working after the ramp (~15s hold). Gas or cruise increase clears immediately.
+    v_cruise_changed = abs(v_cruise - self.prev_v_cruise) > 1.0 * CV.KPH_TO_MS
     v_cruise_dropped = self.prev_v_cruise - v_cruise
     if long_control_active and v_cruise_dropped > PCM_DROP_THRESHOLD and not sm["carState"].gasPressed and self.slc_target > v_cruise:
       self.pcm_drop_timer = PCM_DROP_HOLD_TIME
@@ -102,6 +115,11 @@ class FrogPilotVCruise:
       self.pcm_drop_timer = 0.0
     elif self.pcm_drop_timer > 0:
       self.pcm_drop_timer -= DT_MDL
+
+    # Clear adopted SLC speed on any driver action (stalk, gas) or disengage.
+    if self.slc_adopted_speed > 0 and (sm["carState"].gasPressed or v_cruise_changed or not long_control_active):
+      self.slc_adopted_speed = 0.0
+
     self.prev_v_cruise = v_cruise
 
     if force_stop_enabled and not self.override_force_stop:
@@ -129,5 +147,11 @@ class FrogPilotVCruise:
       if self.pcm_drop_timer > 0 and self.slc_target > 0 and not self.csc_controlling_speed:
         slc_floor = max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff
         v_cruise = max(v_cruise, slc_floor)
+
+      # After a confirmed SLC target increase (ramp→highway merge), adopt the new
+      # SLC speed as a floor so the car accelerates to the new limit instead of
+      # staying stuck at the old PCM cruise speed. Cleared by any stalk press or gas.
+      if self.slc_adopted_speed > 0 and not self.csc_controlling_speed:
+        v_cruise = max(v_cruise, self.slc_adopted_speed - v_ego_diff)
 
     return v_cruise
