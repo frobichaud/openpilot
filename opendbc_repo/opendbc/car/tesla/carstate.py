@@ -148,9 +148,12 @@ class CarState(CarStateBase):
     # LKAS
     ret.stockLkas = cp_ap_party.vl["DAS_steeringControl"]["DAS_steeringControlType"] == 2  # LANE_KEEP_ASSIST
 
-    # Stock Autosteer should be off (includes FSD)
+    # Stock Autosteer should be disengaged (includes FSD) — from dzid26/opendbc vtb branch.
+    # Check DAS_autopilotState (actual engagement) instead of DAS_autosteerEnabled (settings flag).
+    # States 0=DISABLED, 1=UNAVAILABLE, 2=AVAILABLE are safe; anything else means active steering.
+    # TODO: find for TESLA_MODEL_X and HW2.5 vehicles
     if self.CP.carFingerprint in (CAR.TESLA_MODEL_3, CAR.TESLA_MODEL_Y):
-      ret.invalidLkasSetting = cp_ap_party.vl["DAS_settings"]["DAS_autosteerEnabled"] != 0
+      ret.invalidLkasSetting = cp_ap_party.vl["DAS_status"]["DAS_autopilotState"] not in (0, 1, 2)
     else:
       pass
     # Buttons # ToDo: add Gap adjust button
