@@ -6,9 +6,10 @@ static bool tesla_longitudinal = false;
 static bool tesla_stock_aeb = false;
 
 // Only rising edges while controls are not allowed are considered for these systems:
-// TODO: Only LKAS (non-emergency) is currently supported since we've only seen it
-static bool tesla_stock_lkas = false;
-static bool tesla_stock_lkas_prev = false;
+// Car-initiated steering (LDA, ELDA, Autopark, LKAS, etc.) — broadened from LKAS-only
+// per dzid26/opendbc vtb branch. Detects any non-NONE steering control type.
+static bool tesla_stock_steering_control = false;
+static bool tesla_stock_steering_control_prev = false;
 
 // Only Summon is currently supported due to Autopark not setting Autopark state properly
 static bool tesla_autopark = false;
@@ -179,16 +180,16 @@ static void tesla_rx_hook(const CANPacket_t *msg) {
     // DAS_steeringControl
     if (msg->addr == 0x488U) {
       int steering_control_type = msg->data[2] >> 6;
-      bool tesla_stock_lkas_now = steering_control_type == 2;  // "LANE_KEEP_ASSIST"
+      bool tesla_stock_steering_control_now = steering_control_type != 0;  // any non-NONE type
 
       // Only consider rising edges while controls are not allowed
-      if (tesla_stock_lkas_now && !tesla_stock_lkas_prev && !controls_allowed) {
-        tesla_stock_lkas = true;
+      if (tesla_stock_steering_control_now && !tesla_stock_steering_control_prev && !is_lat_active()) {
+        tesla_stock_steering_control = true;
       }
-      if (!tesla_stock_lkas_now) {
-        tesla_stock_lkas = false;
+      if (!tesla_stock_steering_control_now) {
+        tesla_stock_steering_control = false;
       }
-      tesla_stock_lkas_prev = tesla_stock_lkas_now;
+      tesla_stock_steering_control_prev = tesla_stock_steering_control_now;
     }
   }
 }
@@ -240,8 +241,8 @@ static bool tesla_tx_hook(const CANPacket_t *msg) {
       violation = true;
     }
 
-    if (tesla_stock_lkas) {
-      // Don't allow any steering commands when stock LKAS is active
+    if (tesla_stock_steering_control) {
+      // Don't allow any steering commands when stock steering control is active
       violation = true;
     }
   }
@@ -303,7 +304,7 @@ static bool tesla_fwd_hook(int bus_num, int addr) {
       }
 
       // DAS_steeringControl
-      if ((addr == 0x488) && !tesla_stock_lkas) {
+      if ((addr == 0x488) && !tesla_stock_steering_control) {
         block_msg = true;
       }
 
@@ -338,8 +339,8 @@ static safety_config tesla_init(uint16_t param) {
 #endif
 
   tesla_stock_aeb = false;
-  tesla_stock_lkas = false;
-  tesla_stock_lkas_prev = false;
+  tesla_stock_steering_control = false;
+  tesla_stock_steering_control_prev = false;
   // we need to assume Autopark/Summon on startup since DI_state is a low freq msg.
   // this is so that we don't fault if starting while these systems are active
   tesla_autopark = true;
