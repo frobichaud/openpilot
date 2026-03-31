@@ -78,4 +78,8 @@ class CarInterface(CarInterfaceBase):
 
     # ret.dashcamOnly = candidate in (CAR.TESLA_MODEL_X) # dashcam only, pending find invalidLkasSetting signal
 
+    # HW 2.5 and Model X vehicles don't broadcast DAS_settings (msg 0x293)
+    if 0x293 not in fingerprint[CANBUS.autopilot_party]:
+      ret.flags |= TeslaFlags.MISSING_DAS_SETTINGS.value
+
     return ret

@@ -212,6 +212,7 @@ class TeslaSafetyFlags(IntFlag):
 
 class TeslaFlags(IntFlag):
   LONG_CONTROL = 1
+  MISSING_DAS_SETTINGS = 2
 
 
 DBC = CAR.create_dbc_map()
