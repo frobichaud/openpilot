@@ -18,7 +18,7 @@ from openpilot.frogpilot.common.frogpilot_utilities import calculate_distance_to
 NetworkType = log.DeviceState.NetworkType
 
 BOUNDING_BOX_RADIUS_DEGREE = 0.1
-MAX_ENTRIES = 1_000_000
+MAX_ENTRIES = 50_000
 MAX_OVERPASS_DATA_BYTES = 1_073_741_824
 MAX_OVERPASS_REQUESTS = 10_000
 METERS_PER_DEG_LAT = 111_320
