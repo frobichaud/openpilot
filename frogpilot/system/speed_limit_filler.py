@@ -18,7 +18,7 @@ from openpilot.frogpilot.common.frogpilot_utilities import calculate_distance_to
 OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
 OVERPASS_STATUS_ENDPOINT = "https://overpass-api.de/api/status"
 
-MAX_SPEED_LIMITS = 1_000_000
+MAX_SPEED_LIMITS = 50_000
 VETTING_INTERVAL_DAYS = 7
 
 BBOX_PAD = 0.001
