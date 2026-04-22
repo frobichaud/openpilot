@@ -189,8 +189,15 @@ if arch == "larch64":
   env.Append(CCFLAGS=arch_flags)
   env.Append(CXXFLAGS=arch_flags)
 elif arch == "Darwin":
+  # Homebrew prefix: /opt/homebrew (Apple Silicon) or /usr/local (Intel).
+  # Needed for system libusb after Matt Despain's "use system libusb,
+  # not vendored" commit (640e1fb38) — AGNOS has libusb on the default
+  # system path, but clang on macOS does not search Homebrew dirs by default.
+  brew_prefix = subprocess.check_output(["brew", "--prefix"], encoding='utf8').strip()
+  env.Append(CPPPATH=[f"{brew_prefix}/include"])
   env.Append(LIBPATH=[
     "/System/Library/Frameworks/OpenGL.framework/Libraries",
+    f"{brew_prefix}/lib",
   ])
   env.Append(CCFLAGS=["-DGL_SILENCE_DEPRECATION"])
   env.Append(CXXFLAGS=["-DGL_SILENCE_DEPRECATION"])
