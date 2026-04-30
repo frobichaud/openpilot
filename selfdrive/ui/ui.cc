@@ -149,14 +149,21 @@ UIState::UIState(QObject *parent) : QObject(parent) {
 }
 
 void UIState::update() {
+  watchdog_stage("ui_update:start");
   update_sockets(this);
+  watchdog_stage("ui_update:after_update_sockets");
   update_state(this, frogpilotUIState());
+  watchdog_stage("ui_update:after_update_state");
   updateStatus(frogpilotUIState());
+  watchdog_stage("ui_update:after_update_status");
 
   if (sm->frame % UI_FREQ == 0) {
     watchdog_kick(nanos_since_boot());
+    watchdog_stage("ui_update:after_watchdog_kick");
   }
+  watchdog_stage("ui_update:before_emit_uiUpdate");
   emit uiUpdate(*this, *frogpilotUIState());
+  watchdog_stage("ui_update:after_emit_uiUpdate");
 
   // FrogPilot variables
   FrogPilotUIState *fs = frogpilotUIState();
@@ -167,7 +174,9 @@ void UIState::update() {
     device()->resetInteractiveTimeout(frogpilot_toggles.value("screen_timeout").toInt(), frogpilot_toggles.value("screen_timeout_onroad").toInt());
   }
 
+  watchdog_stage("ui_update:before_frogpilot_update");
   fs->update();
+  watchdog_stage("ui_update:end");
 }
 
 Device::Device(QObject *parent) : brightness_filter(BACKLIGHT_OFFROAD, BACKLIGHT_TS, BACKLIGHT_DT), QObject(parent) {

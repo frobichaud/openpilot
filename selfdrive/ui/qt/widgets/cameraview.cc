@@ -9,6 +9,8 @@
 #include <cmath>
 #include <QApplication>
 
+#include "common/watchdog.h"
+
 namespace {
 
 const char frame_vertex_shader[] =
@@ -196,11 +198,17 @@ mat4 CameraWidget::calcFrameMatrix() {
 }
 
 void CameraWidget::paintGL() {
+  watchdog_stage("camera_paint:start");
   glClearColor(bg.redF(), bg.greenF(), bg.blueF(), bg.alphaF());
   glClear(GL_STENCIL_BUFFER_BIT | GL_COLOR_BUFFER_BIT);
 
+  watchdog_stage("camera_paint:before_frame_lock");
   std::lock_guard lk(frame_lock);
-  if (frames.empty()) return;
+  watchdog_stage("camera_paint:after_frame_lock");
+  if (frames.empty()) {
+    watchdog_stage("camera_paint:return_empty_frames");
+    return;
+  }
 
   int frame_idx = frames.size() - 1;
 
@@ -219,7 +227,9 @@ void CameraWidget::paintGL() {
   VisionBuf *frame = frames[frame_idx].second;
   assert(frame != nullptr);
 
+  watchdog_stage("camera_paint:before_calc_matrix");
   auto frame_mat = calcFrameMatrix();
+  watchdog_stage("camera_paint:after_calc_matrix");
 
   glViewport(0, 0, glWidth(), glHeight());
   glBindVertexArray(frame_vao);
@@ -248,13 +258,16 @@ void CameraWidget::paintGL() {
 
   glUniformMatrix4fv(program->uniformLocation("uTransform"), 1, GL_TRUE, frame_mat.v);
   glEnableVertexAttribArray(0);
+  watchdog_stage("camera_paint:before_draw_elements");
   glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_BYTE, (const void *)0);
+  watchdog_stage("camera_paint:after_draw_elements");
   glDisableVertexAttribArray(0);
   glBindVertexArray(0);
   glBindTexture(GL_TEXTURE_2D, 0);
   glActiveTexture(GL_TEXTURE0);
   glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
   glPixelStorei(GL_UNPACK_ROW_LENGTH, 0);
+  watchdog_stage("camera_paint:end");
 }
 
 void CameraWidget::vipcConnected(VisionIpcClient *vipc_client) {

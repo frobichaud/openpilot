@@ -51,6 +51,26 @@ def capture_exception(*args, crash_log=True, **kwargs) -> None:
     cloudlog.exception("sentry exception")
 
 
+def capture_message(message: str, level: str = "error", extras=None, tags=None, attachments=None) -> None:
+  try:
+    with sentry_sdk.configure_scope() as scope:
+      for key, value in (extras or {}).items():
+        scope.set_extra(key, value)
+      for key, value in (tags or {}).items():
+        scope.set_tag(key, value)
+
+      if attachments and hasattr(scope, "add_attachment"):
+        for filename, data, content_type in attachments:
+          if isinstance(data, str):
+            data = data.encode("utf-8", errors="replace")
+          scope.add_attachment(bytes=data, filename=filename, content_type=content_type)
+
+    sentry_sdk.capture_message(message=message, level=level)
+    sentry_sdk.flush()
+  except Exception:
+    cloudlog.exception("sentry message exception")
+
+
 def set_tag(key: str, value: str) -> None:
   sentry_sdk.set_tag(key, value)
 

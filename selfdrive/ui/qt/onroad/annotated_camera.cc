@@ -6,6 +6,7 @@
 #include <cmath>
 
 #include "common/swaglog.h"
+#include "common/watchdog.h"
 #include "selfdrive/ui/qt/util.h"
 
 // Window that shows camera view and variety of info drawn on top
@@ -121,16 +122,21 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
   SubMaster &sm = *(s->sm);
   const double start_draw_t = millis_since_boot();
 
+  watchdog_stage("paint:start");
   QPainter painter(this);
+  watchdog_stage("paint:after_qpainter");
 
   // draw camera frame
   {
+    watchdog_stage("paint:before_frame_lock");
     std::lock_guard lk(frame_lock);
+    watchdog_stage("paint:after_frame_lock");
 
     if (frames.empty()) {
       if (skip_frame_count > 0) {
         skip_frame_count--;
         qDebug() << "skipping frame, not ready";
+        watchdog_stage("paint:return_frame_not_ready");
         return;
       }
     } else {
@@ -156,11 +162,16 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
                                 VISION_STREAM_ROAD);
     CameraWidget::setFrameId(sm["modelV2"].getModelV2().getFrameId());
 
+    watchdog_stage("paint:before_begin_native");
     painter.beginNativePainting();
+    watchdog_stage("paint:before_camera_paintgl");
     CameraWidget::paintGL();
+    watchdog_stage("paint:after_camera_paintgl");
     painter.endNativePainting();
+    watchdog_stage("paint:after_end_native");
   }
 
+  watchdog_stage("paint:before_qpainter_draws");
   painter.setRenderHint(QPainter::Antialiasing);
   painter.setPen(Qt::NoPen);
 
@@ -177,13 +188,20 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
   hud.frogpilot_toggles = frogpilot_toggles;
   model.frogpilot_toggles = frogpilot_toggles;
 
+  watchdog_stage("paint:before_model_draw");
   model.draw(painter, rect());
+  watchdog_stage("paint:after_model_draw");
   dmon.draw(painter, rect());
+  watchdog_stage("paint:after_dmon_draw");
   hud.updateState(*s);
+  watchdog_stage("paint:after_hud_update_state");
   hud.draw(painter, rect());
+  watchdog_stage("paint:after_hud_draw");
 
   // FrogPilot variables
+  watchdog_stage("paint:before_frogpilot_widgets");
   frogpilot_nvg->paintFrogPilotWidgets(painter, *s);
+  watchdog_stage("paint:after_frogpilot_widgets");
 
   double cur_draw_t = millis_since_boot();
   double dt = cur_draw_t - prev_draw_t;
@@ -197,7 +215,9 @@ void AnnotatedCameraWidget::paintEvent(QPaintEvent *event) {
   MessageBuilder msg;
   auto m = msg.initEvent().initUiDebug();
   m.setDrawTimeMillis(cur_draw_t - start_draw_t);
+  watchdog_stage("paint:before_ui_debug_send");
   pm->send("uiDebug", msg);
+  watchdog_stage("paint:end");
 }
 
 void AnnotatedCameraWidget::showEvent(QShowEvent *event) {
