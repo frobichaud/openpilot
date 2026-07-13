@@ -27,11 +27,12 @@ private:
   bool mapboxSecretKeySet;
   bool updatingLimits;
 
-  FrogPilotButtonsControl *publicMapboxKeyControl;
-  FrogPilotButtonsControl *secretMapboxKeyControl;
   ButtonControl *setupButton;
 
   FrogPilotButtonControl *updateSpeedLimitsToggle;
+
+  FrogPilotButtonsControl *publicMapboxKeyControl;
+  FrogPilotButtonsControl *secretMapboxKeyControl;
 
   FrogPilotSettingsWindow *parent;
 

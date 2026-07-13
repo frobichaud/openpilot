@@ -259,6 +259,8 @@ class FrogPilotTelemetry:
 
           if self.upload(segment, scrubbed):
             setxattr(rlog_path, TELEMETRY_XATTR, b"1")
+          else:
+            time.sleep(ERROR_BACKOFF)
 
           return True
         except OSError as error:

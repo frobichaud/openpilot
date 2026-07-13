@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 import dataclasses
+import hashlib
 import json
+import jwt
+import random
 import requests
 import threading
 import time
@@ -17,10 +20,10 @@ from openpilot.system.hardware import HARDWARE
 
 from openpilot.frogpilot.assets.theme_manager import ThemeManager
 from openpilot.frogpilot.common.frogpilot_backups import backup_frogpilot
-from openpilot.frogpilot.common.frogpilot_utilities import get_frogpilot_api_info, is_FrogsGoMoo, is_url_pingable, run_cmd, use_konik_server
+from openpilot.frogpilot.common.frogpilot_utilities import delete_file, get_frogpilot_api_info, is_FrogsGoMoo, is_url_pingable, run_cmd, use_konik_server
 from openpilot.frogpilot.common.frogpilot_variables import (
-  ERROR_LOGS_PATH, FROGPILOT_API, FROGS_GO_MOO_PATH, HD_LOGS_PATH, KONIK_LOGS_PATH, MAPS_PATH, THEME_SAVE_PATH,
-  FrogPilotVariables, get_frogpilot_toggles
+  ERROR_LOGS_PATH, FROGPILOT_API, FROGS_GO_MOO_PATH, HD_LOGS_PATH, KONIK_LOGS_PATH, MAPS_PATH,
+  SCREEN_RECORDINGS_PATH, THEME_SAVE_PATH, FrogPilotVariables, get_frogpilot_toggles
 )
 
 
@@ -94,15 +97,27 @@ def frogpilot_boot_functions(build_metadata, params):
   threading.Thread(target=boot_thread, daemon=True).start()
 
 
+def cleanup_screen_recordings(limit_bytes):
+  recordings = sorted(SCREEN_RECORDINGS_PATH.glob("*.mp4"), key=lambda recording: recording.stat().st_mtime, reverse=True)
+
+  total = 0
+  for recording in recordings:
+    total += recording.stat().st_size
+    if total > limit_bytes:
+      delete_file(recording, report=False)
+
 def install_frogpilot(build_metadata, params):
   paths = [
     ERROR_LOGS_PATH,
     HD_LOGS_PATH,
     KONIK_LOGS_PATH,
+    SCREEN_RECORDINGS_PATH,
     THEME_SAVE_PATH
   ]
   for path in paths:
     path.mkdir(parents=True, exist_ok=True)
+
+  cleanup_screen_recordings(10 * 1024 * 1024 * 1024)
 
   register_device(build_metadata, params)
 
@@ -117,30 +132,65 @@ def install_frogpilot(build_metadata, params):
 
 def register_device(build_metadata, params):
   def register_thread():
-    while not is_url_pingable(FROGPILOT_API):
-      time.sleep(60)
+    while not system_time_valid():
+      time.sleep(1)
 
-    _, _, public_key = get_key_pair()
-    payload = {
+    algorithm, private_key, public_key = get_key_pair()
+    if not private_key:
+      print("Failed to register device")
+      return
+
+    body = json.dumps({
       "build_metadata": dataclasses.asdict(build_metadata),
-      "device": HARDWARE.get_device_type(),
-      "device_public_key": public_key,
-      "dongle_id": params.get("DongleId"),
+      "device_type": HARDWARE.get_device_type(),
       "os_version": HARDWARE.get_os_version(),
-    }
+      "public_key": public_key,
+    }, separators=(",", ":"), sort_keys=True)
 
-    try:
-      response = requests.post(f"{FROGPILOT_API}/register", json=payload, headers={"Content-Type": "application/json", "User-Agent": "frogpilot-api/1.0"}, timeout=10)
-      response.raise_for_status()
+    while True:
+      now = int(time.time())
+      token = jwt.encode({
+        "body_sha256": hashlib.sha256(body.encode()).hexdigest(),
+        "exp": now + 15 * 60,
+        "iat": now,
+      }, private_key, algorithm=algorithm)
 
-      data = response.json()
-      print(f"Device registration successful: dongle_id={data.get('frogpilot_dongle_id', '')[:8]}..., token={'set' if data.get('api_token') else 'empty'}")
-      params.put("FrogPilotApiToken", data.get("api_token", ""))
-      params.put("FrogPilotDongleId", data.get("frogpilot_dongle_id"))
-    except Exception as e:
-      print(f"Device registration failed: {e}")
-      if hasattr(e, 'response') and e.response is not None:
-        print(f"  Status: {e.response.status_code}, Body: {e.response.text[:200]}")
+      response = None
+      try:
+        response = requests.post(
+          f"{FROGPILOT_API}/v1/register",
+          data=body,
+          headers={
+            "Authorization": f"JWT {token}",
+            "Content-Type": "application/json",
+          },
+          timeout=20,
+          allow_redirects=False,
+        )
+
+        if response.status_code == 200:
+          try:
+            frogpilot_dongle_id = response.json().get("frogpilot_dongle_id")
+          except (AttributeError, ValueError):
+            frogpilot_dongle_id = None
+
+          if isinstance(frogpilot_dongle_id, str) and frogpilot_dongle_id:
+            params.put("FrogPilotDongleId", frogpilot_dongle_id)
+            print("Successfully registered device!")
+            return
+        elif response.status_code != 429 and response.status_code < 500:
+          break
+      except requests.exceptions.RequestException:
+        pass
+
+      if response is not None and response.status_code == 429:
+        retry_after = response.headers.get("Retry-After", "")
+        delay = min(int(retry_after), 120) if retry_after.isdigit() else 60
+      else:
+        delay = random.uniform(60, 90)
+      time.sleep(delay)
+
+    print("Failed to register device")
 
   threading.Thread(target=register_thread, daemon=True).start()
 
@@ -177,6 +227,8 @@ def update_maps(now, params, params_memory, manual_update=False):
   maps_selected = params.get("MapsSelected")
   if not maps_selected:
     return
+
+  now = now.astimezone()
 
   day = now.day
   is_first = day == 1

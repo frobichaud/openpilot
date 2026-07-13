@@ -12,8 +12,11 @@ public:
   explicit ScreenRecorder(QWidget *parent = nullptr);
   ~ScreenRecorder();
 
-  void startRecording();
+  bool startRecording();
   void stopRecording();
+
+signals:
+  void recordingStateChanged(bool recording);
 
 protected:
   void paintEvent(QPaintEvent *event) override;

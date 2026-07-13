@@ -45,6 +45,9 @@ class FrogPilotVCruise:
     v_ego_diff = v_ego_cluster - v_ego
 
     # FrogsGoMoo's Curve Speed Controller
+    self.csc.update_budget(frogpilot_toggles)
+    self.csc.update_max_limit(v_ego, sm, frogpilot_toggles)
+
     if long_control_active and v_ego > CRUISING_SPEED and self.frogpilot_planner.road_curvature_detected and frogpilot_toggles.curve_speed_controller:
       self.csc.update_target(v_ego)
 

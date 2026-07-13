@@ -34,31 +34,37 @@ void ScreenRecorder::updateState() {
   }
 
   if (!engine->is_recording()) {
-    engine->stop();
+    engine->request_stop();
 
     recording = false;
 
     update();
 
+    emit recordingStateChanged(false);
+
     return;
   }
 
-  if (frameCount++ % 2 == 0) {
+  if (frameCount++ % 2 == 0 && engine->can_accept_frame()) {
     engine->submit_frame(rootWidget->grab().toImage(), nanos_since_boot());
   }
 }
 
 void ScreenRecorder::toggleRecording() {
-  recording ? stopRecording() : startRecording();
+  if (recording) {
+    stopRecording();
+  } else {
+    startRecording();
+  }
 }
 
-void ScreenRecorder::startRecording() {
+bool ScreenRecorder::startRecording() {
   if (recording) {
-    return;
+    return true;
   }
 
   if (!engine->start()) {
-    return;
+    return false;
   }
 
   recording = true;
@@ -68,6 +74,10 @@ void ScreenRecorder::startRecording() {
   startedTime = QDateTime::currentMSecsSinceEpoch();
 
   update();
+
+  emit recordingStateChanged(true);
+
+  return true;
 }
 
 void ScreenRecorder::stopRecording() {
@@ -77,9 +87,11 @@ void ScreenRecorder::stopRecording() {
 
   recording = false;
 
-  engine->stop();
+  engine->request_stop();
 
   update();
+
+  emit recordingStateChanged(false);
 }
 
 void ScreenRecorder::paintEvent(QPaintEvent *event) {

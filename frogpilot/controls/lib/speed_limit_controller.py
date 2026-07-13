@@ -14,8 +14,8 @@ from openpilot.frogpilot.common.frogpilot_utilities import calculate_bearing_off
 FREE_MAPBOX_REQUESTS = 100_000
 
 OFFSET_MAP_IMPERIAL = [
-  (0, 11.2, "speed_limit_offset1"),     # 0–24 mph
-  (11.2, 15.2, "speed_limit_offset2"),  # 25–34
+  (0, 11.0, "speed_limit_offset1"),     # 0–24 mph
+  (11.0, 15.2, "speed_limit_offset2"),  # 25–34
   (15.2, 19.6, "speed_limit_offset3"),  # 35–44
   (19.6, 24.1, "speed_limit_offset4"),  # 45–54
   (24.1, 28.6, "speed_limit_offset5"),  # 55–64
@@ -78,7 +78,7 @@ class SpeedLimitController:
     return next((getattr(self.frogpilot_toggles, offset) for low, high, offset in offset_map if low < self.target < high), 0)
 
   def get_mapbox_speed_limit(self, now, time_validated, v_ego, sm):
-    if not self.frogpilot_planner.gps_valid or not self.mapbox_token or (sm["carState"].steeringAngleDeg - sm["liveParameters"].angleOffsetDeg) >= 45:
+    if not self.frogpilot_planner.gps_valid or not self.mapbox_token or abs(sm["carState"].steeringAngleDeg - sm["liveParameters"].angleOffsetDeg) >= 45:
       self.mapbox_limit = 0
       self.segment_distance = 0
       return

@@ -16,6 +16,7 @@ from openpilot.common.params import Params
 from openpilot.frogpilot.common.frogpilot_utilities import calculate_distance_to_point, is_url_pingable
 
 OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
+OVERPASS_STATUS_ENDPOINT = "https://overpass-api.de/api/status"
 
 MAX_SPEED_LIMITS = 1_000_000
 VETTING_INTERVAL_DAYS = 7
@@ -104,6 +105,9 @@ def load_dict(raw):
 
 
 def load_records(raw):
+  if isinstance(raw, list):
+    return raw
+
   try:
     records = json.loads(raw or "[]")
   except (TypeError, ValueError):
@@ -276,15 +280,21 @@ class SpeedLimitFiller:
 
     self.speed_limits = deque(maxlen=MAX_SPEED_LIMITS)
 
-    self.sm = messaging.SubMaster(["deviceState", "frogpilotCarState", "frogpilotPlan"])
+    self.sm = messaging.SubMaster(["deviceState", "frogpilotCarState", "frogpilotPlan", "mapdOut"])
 
-  def filter_speed_limits(self, speed_limits):
-    if not is_url_pingable(OVERPASS_ENDPOINT):
-      return
+  def filter_speed_limits(self, speed_limits, cancelable=False):
+    def cancelled():
+      return cancelable and not self.params_memory.get_bool("UpdateSpeedLimits")
+
+    if cancelled():
+      return False
+
+    if not is_url_pingable(OVERPASS_STATUS_ENDPOINT):
+      return True
 
     existing = load_records(self.params.get("SpeedLimitsFiltered"))
     if not speed_limits and not existing:
-      return
+      return True
 
     way_cache = {}
 
@@ -310,6 +320,9 @@ class SpeedLimitFiller:
     unverified_segments = set()
 
     for entry in existing:
+      if cancelled():
+        return False
+
       if not valid_entry(entry):
         continue
 
@@ -332,6 +345,9 @@ class SpeedLimitFiller:
 
     deferred = []
     for entry in speed_limits:
+      if cancelled():
+        return False
+
       if not valid_entry(entry):
         continue
 
@@ -379,8 +395,12 @@ class SpeedLimitFiller:
         filtered.append(self.confirmed_record(entry, way, now))
         confirmed_segments.add(way.get("id"))
 
-    self.params.put("SpeedLimitsFiltered", json.dumps(list(filtered)))
-    self.params.put("SpeedLimits", json.dumps(deferred))
+    if cancelled():
+      return False
+
+    self.params.put("SpeedLimitsFiltered", list(filtered))
+    self.params.put("SpeedLimits", deferred)
+    return True
 
   @staticmethod
   def confirmed_record(entry, way, now):
@@ -420,11 +440,11 @@ class SpeedLimitFiller:
     if self.logged_position and calculate_distance_to_point(*self.logged_position, latitude, longitude) < 1:
       return
 
-    road_name = self.params_memory.get("RoadName") or ""
+    road_name = self.sm["mapdOut"].roadName
     if not road_name:
       return
 
-    map_speed_limit = parse_float(self.params_memory.get("MapSpeedLimit"))
+    map_speed_limit = self.sm["mapdOut"].speedLimit
     if map_speed_limit >= 1:
       if abs(map_speed_limit - reference_speed_limit) < 1:
         return
@@ -471,18 +491,22 @@ class SpeedLimitFiller:
     self.sm.update()
 
     started = self.sm["deviceState"].started
+    manual_update = self.params_memory.get_bool("UpdateSpeedLimits")
 
     if started and not self.started_previously:
       self.speed_limits = deque(maxlen=MAX_SPEED_LIMITS)
 
       self.logged_position = None
-    elif not started and self.started_previously:
+    elif not started and (self.started_previously or manual_update):
       merged = deque(load_records(self.params.get("SpeedLimits")), maxlen=MAX_SPEED_LIMITS)
-      if self.speed_limits:
+      if self.started_previously and self.speed_limits:
         merged.extend(self.speed_limits)
-        self.params.put("SpeedLimits", json.dumps(list(merged)))
+        self.params.put("SpeedLimits", list(merged))
 
-      self.filter_speed_limits(merged)
+      completed = self.filter_speed_limits(merged, cancelable=manual_update)
+      if manual_update and completed and self.params_memory.get_bool("UpdateSpeedLimits"):
+        self.params_memory.remove("UpdateSpeedLimits")
+        self.params_memory.put("UpdateSpeedLimitsStatus", "Completed!")
     elif started:
       self.log_speed_limit()
 

@@ -16,8 +16,10 @@
 namespace {
 const QString RECORDINGS_DIR = "/data/media/screen_recordings";
 constexpr uint64_t MAX_SEGMENT_NS = 5ULL * 60 * 1000000000ULL;
-constexpr uint64_t MIN_FREE_SPACE_BYTES = 1ULL << 30;
+constexpr uint64_t MIN_FREE_SPACE_BYTES = 6ULL << 30;
 }
+
+std::atomic<bool> RecorderEngine::engine_active{false};
 
 RecorderEngine::RecorderEngine(int width, int height, int fps, int bitrate) : bitrate(bitrate), fps(fps), height(height), width(width) {}
 
@@ -72,15 +74,26 @@ bool RecorderEngine::start() {
   }
 
   if (worker.joinable()) {
+    if (!worker_finished) {
+      return false;
+    }
     worker.join();
+  }
+
+  bool inactive = false;
+  if (!engine_active.compare_exchange_strong(inactive, true)) {
+    LOGE("screenrecorder: another recorder is already running");
+    return false;
   }
 
   QDir().mkpath(RECORDINGS_DIR);
   if (!open_segment()) {
     LOGE("screenrecorder: failed to start encoder");
+    engine_active = false;
     return false;
   }
 
+  worker_finished = false;
   recording = true;
 
   worker = std::thread(&RecorderEngine::worker_loop, this);
@@ -88,10 +101,22 @@ bool RecorderEngine::start() {
   return true;
 }
 
-void RecorderEngine::stop() {
-  recording = false;
+bool RecorderEngine::can_accept_frame() const {
+  if (!recording) {
+    return false;
+  }
 
+  std::lock_guard<std::mutex> lk(q_mutex);
+  return queue.size() < MAX_QUEUE;
+}
+
+void RecorderEngine::request_stop() {
+  recording = false;
   q_cv.notify_all();
+}
+
+void RecorderEngine::stop() {
+  request_stop();
 
   if (worker.joinable()) {
     worker.join();
@@ -101,7 +126,6 @@ void RecorderEngine::stop() {
     std::lock_guard<std::mutex> lk(q_mutex);
     queue.clear();
   }
-  encoder.reset();
 }
 
 void RecorderEngine::submit_frame(QImage &&frame, uint64_t ts_ns) {
@@ -187,4 +211,12 @@ void RecorderEngine::worker_loop() {
     prev_image = cf.image;
     prev_ts = cf.ts_ns;
   }
+
+  {
+    std::lock_guard<std::mutex> lk(q_mutex);
+    queue.clear();
+  }
+  encoder.reset();
+  engine_active = false;
+  worker_finished = true;
 }

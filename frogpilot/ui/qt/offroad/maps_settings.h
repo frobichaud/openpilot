@@ -23,7 +23,9 @@ private:
 
   bool cancellingDownload;
   bool forceOpenDescriptions;
-  bool hasMapsSelected;
+  bool hasMapsSelected = false;
+
+  int previousDownloadedFiles = 0;
 
   ButtonControl *downloadMapsButton;
   ButtonControl *removeMapsButton;

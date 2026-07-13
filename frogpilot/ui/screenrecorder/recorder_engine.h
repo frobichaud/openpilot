@@ -20,6 +20,8 @@ public:
   bool is_recording() const { return recording; }
   bool start();
 
+  bool can_accept_frame() const;
+  void request_stop();
   void stop();
   void submit_frame(QImage &&frame, uint64_t ts_ns);
 
@@ -38,6 +40,8 @@ private:
 
   static constexpr size_t MAX_QUEUE = 4;
 
+  static std::atomic<bool> engine_active;
+
   const int bitrate;
   const int fps;
   const int height;
@@ -49,12 +53,13 @@ private:
   bool size_warned = false;
 
   std::atomic<bool> recording{false};
+  std::atomic<bool> worker_finished{true};
 
   std::condition_variable q_cv;
 
   std::deque<CapturedFrame> queue;
 
-  std::mutex q_mutex;
+  mutable std::mutex q_mutex;
 
   std::string segment_path() const;
 

@@ -25,7 +25,7 @@ from openpilot.system.hardware import HARDWARE
 from openpilot.system.version import get_build_metadata
 from panda import Panda
 
-from openpilot.frogpilot.common.frogpilot_variables import EARTH_RADIUS, FROGS_GO_MOO_PATH, KONIK_PATH
+from openpilot.frogpilot.common.frogpilot_variables import EARTH_RADIUS, FROGPILOT_API, FROGS_GO_MOO_PATH, KONIK_PATH, MINIMUM_PLANNED_SPEED
 
 class ThreadManager:
   def __init__(self):
@@ -119,17 +119,21 @@ def calculate_lane_width(lane_line1, lane_line2, road_edge=None):
 
 
 # Credit goes to Pfeiferj!
-def calculate_road_curvature(modelData):
-  orientation_rate = np.array(modelData.orientationRate.z)
-  timebase = np.array(modelData.orientationRate.t)
+def calculate_road_curvature(modelData, v_ego, lateral_budget):
   velocity = np.array(modelData.velocity.x)
 
-  lateral_acceleration = orientation_rate * velocity
-  index = np.argmax(np.abs(lateral_acceleration))
-  predicted_lateral_acc = float(lateral_acceleration[index])
-  time_to_curve = float(timebase[index])
+  curvature = np.array(modelData.orientationRate.z) / np.maximum(velocity, 1)
+  moving_curvature = np.where(velocity >= MINIMUM_PLANNED_SPEED, np.abs(curvature), 0)
 
-  return float(predicted_lateral_acc / max(velocity[index], 1)**2), max(time_to_curve, 1)
+  time_to_point = np.maximum(np.array(modelData.orientationRate.t), 1)
+  required_decelerations = (v_ego - np.sqrt(lateral_budget / np.maximum(moving_curvature, 1e-6))) / time_to_point
+
+  if lateral_budget > 0 and np.any(required_decelerations > 0):
+    index = np.argmax(required_decelerations)
+  else:
+    index = np.argmax(moving_curvature)
+
+  return float(curvature[index]), float(time_to_point[index]), float(np.max(moving_curvature))
 
 
 def clean_model_name(name):
@@ -182,6 +186,15 @@ class FrogPilotApiInfo(NamedTuple):
   device_type: str
   dongle_id: str
   os_version: str
+
+
+def frogpilot_api_post(path, payload):
+  try:
+    response = requests.post(f"{FROGPILOT_API}{path}", json=payload, timeout=10)
+    response.raise_for_status()
+    return response.json()
+  except (requests.exceptions.RequestException, ValueError):
+    return None
 
 
 def get_frogpilot_api_info():

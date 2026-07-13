@@ -30,7 +30,7 @@ def check_assets(now, theme_manager, thread_manager, params, params_memory, frog
 
   report_data = params_memory.get("IssueReported")
   if report_data:
-    capture_report(report_data["DiscordUser"], report_data["Issue"], params, vars(frogpilot_toggles))
+    thread_manager.run_with_lock(capture_report, (report_data["DiscordUser"], report_data["Issue"], params, dict(vars(frogpilot_toggles))))
     params_memory.remove("IssueReported")
 
   if params_memory.get_bool("DownloadMaps"):
@@ -38,6 +38,7 @@ def check_assets(now, theme_manager, thread_manager, params, params_memory, frog
 
 def transition_offroad(frogpilot_planner, theme_manager, thread_manager, time_validated, sm, params, frogpilot_toggles):
   params.put("LastGPSPosition", json.dumps(frogpilot_planner.gps_position))
+  params.put("MaxLateralAcceleration", frogpilot_planner.frogpilot_vcruise.csc.max_limit)
 
   if frogpilot_toggles.lock_doors_timer != 0:
     thread_manager.run_with_lock(lock_doors, (frogpilot_toggles.lock_doors_timer, sm, params), report=False)
@@ -129,6 +130,10 @@ def frogpilot_thread():
       frogpilot_tracking = FrogPilotTracking(frogpilot_planner, frogpilot_toggles)
 
       transition_onroad(error_log)
+
+    if theme_manager.theme_updated:
+      frogpilot_variables.update(theme_manager.holiday_theme, started)
+      frogpilot_toggles = frogpilot_variables.frogpilot_toggles
 
     if started and sm.updated["modelV2"]:
       frogpilot_planner.update(now, time_validated, sm, frogpilot_toggles)
