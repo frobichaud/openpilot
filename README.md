@@ -1,3 +1,10 @@
+## Fork status
+
+**aug26 (FrogPilot):** [![aug26 (FrogPilot)](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml/badge.svg?branch=tesla-xnor-c3-dev-aug26)](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml?query=branch%3Atesla-xnor-c3-dev-aug26)
+**sunny (sunnypilot):** [![sunny (sunnypilot)](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml/badge.svg?branch=tesla-xnor-sunny)](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml?query=branch%3Atesla-xnor-sunny)
+
+---
+
 <div align="center" style="text-align: center;">
 
 <h1>openpilot</h1>
