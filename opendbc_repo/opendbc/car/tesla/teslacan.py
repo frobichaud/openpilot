@@ -1,5 +1,4 @@
-from opendbc.car import DT_CTRL
-from opendbc.car.common.conversions import Conversions as CV
+from opendbc.car.tesla.longcontrol import JerkRamp, long_set_speed
 from opendbc.car.tesla.values import CANBUS, CarControllerParams, TeslaFlags
 
 
@@ -14,7 +13,7 @@ def get_steer_ctrl_type(flags: int, ctrl_type: int) -> int:
 class TeslaCAN:
   def __init__(self, packer):
     self.packer = packer
-    self.jerk = 0.0
+    self.jerk_ramp = JerkRamp()
 
   def create_steering_control(self, angle, enabled):
     values = {
@@ -26,21 +25,12 @@ class TeslaCAN:
     return self.packer.make_can_msg("DAS_steeringControl", CANBUS.party, values)
 
   def create_longitudinal_command(self, acc_state, accel, counter, v_ego, active, cruise_override):
-    from opendbc.car.interfaces import V_CRUISE_MAX
-
-    set_speed = max(v_ego * CV.MS_TO_KPH, 0)
-    if active:
-      set_speed = 0 if (accel < 0 and not cruise_override) else V_CRUISE_MAX
-
-    # Ramp max jerk from 0 after gas override ends (fixes jerkiness)
-    self.jerk = 0 if cruise_override else (self.jerk + CarControllerParams.JERK_RATE_UP * DT_CTRL * 4)
-
     values = {
-      "DAS_setSpeed": set_speed,
+      "DAS_setSpeed": long_set_speed(v_ego, active, accel, cruise_override),
       "DAS_accState": acc_state,
       "DAS_aebEvent": 0,
       "DAS_jerkMin": CarControllerParams.JERK_LIMIT_MIN,
-      "DAS_jerkMax": min(self.jerk, CarControllerParams.JERK_LIMIT_MAX),
+      "DAS_jerkMax": self.jerk_ramp.update(cruise_override),
       "DAS_accelMin": accel,
       "DAS_accelMax": max(accel, 0),
       "DAS_controlCounter": counter,

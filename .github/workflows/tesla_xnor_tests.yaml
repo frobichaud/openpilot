@@ -58,9 +58,15 @@ jobs:
         working-directory: opendbc_repo
         run: uv run --project .. scons -j"$(nproc)" opendbc/safety/tests/libsafety/
 
-      - name: Cooperative steering unit + carcontroller tests
+      - name: Cooperative steering + longitudinal unit tests
         working-directory: opendbc_repo
-        run: uv run --project .. python -m unittest opendbc.car.tesla.tests.test_coopsteering -v
+        run: |
+          uv run --project .. python -m unittest -v \
+            opendbc.car.tesla.tests.test_coopsteering \
+            opendbc.car.tesla.tests.test_longcontrol
+
+      - name: Tesla PCM cruise logic tests (SLC/CSC/PCM-drop arbitration)
+        run: uv run python -m unittest -v openpilot.frogpilot.controls.lib.tests.test_tesla_pcm_cruise
 
       - name: Panda safety suites (Tesla modern/legacy + MG)
         working-directory: opendbc_repo

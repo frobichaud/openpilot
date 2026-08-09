@@ -37,7 +37,8 @@ The tip of the current train is tagged `train/<monYY>` (e.g. `train/aug26`).
    - Run the Tesla test suites locally (same as CI):
      `uv run scons -j8 common/params_pyx.so` (needs zeromq: `brew install zeromq`, CPATH=/opt/homebrew/include)
      `cd opendbc_repo && uv run --project .. scons -j8 opendbc/safety/tests/libsafety/`
-     `uv run --project .. python -m unittest opendbc.car.tesla.tests.test_coopsteering opendbc.safety.tests.test_tesla opendbc.safety.tests.test_tesla_hw23 opendbc.safety.tests.test_tesla_hw1 opendbc.safety.tests.test_mg`
+     `uv run --project .. python -m unittest opendbc.car.tesla.tests.test_coopsteering opendbc.car.tesla.tests.test_longcontrol opendbc.safety.tests.test_tesla opendbc.safety.tests.test_tesla_hw23 opendbc.safety.tests.test_tesla_hw1 opendbc.safety.tests.test_mg`
+     `uv run python -m unittest openpilot.frogpilot.controls.lib.tests.test_tesla_pcm_cruise` (from repo root)
    - CI: pushing any `tesla-xnor-*` branch runs `.github/workflows/tesla_xnor_tests.yaml`
      (coop steering tests + the four panda safety suites). Check with
      `gh run list --repo frobichaud/openpilot --workflow "tesla-xnor tests"`.

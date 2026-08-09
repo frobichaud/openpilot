@@ -5,10 +5,9 @@ from openpilot.common.realtime import DT_MDL
 from openpilot.frogpilot.common.frogpilot_variables import CRUISING_SPEED, PLANNER_TIME
 from openpilot.frogpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.frogpilot.controls.lib.speed_limit_controller import SpeedLimitController
+from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import PcmDropDetector, resolve_cruise_target, slc_stalk_rearm
 
 OVERRIDE_FORCE_STOP_TIMER = 10
-PCM_DROP_THRESHOLD = 7.5 * CV.KPH_TO_MS  # Must exceed 5 kph stalk step; catches ≥10 kph Tesla firmware drops
-PCM_DROP_HOLD_TIME = 15  # seconds to hold SLC floor after Tesla autonomous cruise drop
 
 class FrogPilotVCruise:
   def __init__(self, FrogPilotPlanner):
@@ -22,8 +21,7 @@ class FrogPilotVCruise:
 
     self.override_force_stop_timer = 0
 
-    self.pcm_drop_timer = 0.0  # countdown timer for SLC floor after Tesla autonomous cruise drop
-    self.prev_v_cruise = 0.0
+    self.pcm_drop = PcmDropDetector()  # SLC floor hold after Tesla autonomous cruise drop
 
   def update(self, long_control_active, now, time_validated, v_cruise, v_ego, sm, frogpilot_toggles):
     force_stop = self.frogpilot_planner.frogpilot_cem.stop_light_detected and long_control_active and frogpilot_toggles.force_stops
@@ -77,13 +75,10 @@ class FrogPilotVCruise:
       self.slc_offset = self.slc.offset
       self.slc_target = self.slc.target
 
-      # Re-arm SLC override when driver stalks cruise speed above the SLC ceiling.
-      # On Tesla pcmCruise, v_cruise only changes via stalk or firmware — an increase
-      # above the ceiling is always an intentional driver action. Without this,
-      # stalking down below the ceiling kills the override and stalking back up
-      # gets stuck at the ceiling until gas is pressed.
-      if self.slc.overridden_speed == 0 and v_cruise > self.slc_target + self.slc_offset > 0:
-        self.slc.overridden_speed = v_cruise + v_cruise_diff
+      # Re-arm SLC override when driver stalks cruise speed above the SLC ceiling
+      # (see tesla_pcm_cruise.slc_stalk_rearm for rationale)
+      self.slc.overridden_speed = slc_stalk_rearm(self.slc.overridden_speed, v_cruise,
+                                                  v_cruise_diff, self.slc_target, self.slc_offset)
     elif frogpilot_toggles.show_speed_limits:
       self.slc.update_limits(sm["frogpilotCarState"].dashboardSpeedLimit, now, time_validated, v_cruise, v_ego, sm)
 
@@ -93,19 +88,9 @@ class FrogPilotVCruise:
       self.slc_offset = 0
       self.slc_target = 0
 
-    # Detect Tesla PCM autonomously dropping cruise via speed sign reading.
-    # Stalk presses arrive as ±5 kph steps; Tesla firmware drops are ≥10 kph.
-    # Threshold of 7.5 kph cleanly separates the two (avoids float rounding issues).
-    # Uses a countdown timer instead of a sticky flag so stalk presses resume
-    # working after the ramp (~15s hold). Gas or cruise increase clears immediately.
-    v_cruise_dropped = self.prev_v_cruise - v_cruise
-    if long_control_active and v_cruise_dropped > PCM_DROP_THRESHOLD and not sm["carState"].gasPressed and self.slc_target > v_cruise:
-      self.pcm_drop_timer = PCM_DROP_HOLD_TIME
-    elif sm["carState"].gasPressed or v_cruise > self.prev_v_cruise:
-      self.pcm_drop_timer = 0.0
-    elif self.pcm_drop_timer > 0:
-      self.pcm_drop_timer -= DT_MDL
-    self.prev_v_cruise = v_cruise
+    # Detect Tesla PCM autonomously dropping cruise via speed sign reading
+    # (see tesla_pcm_cruise.PcmDropDetector for rationale)
+    self.pcm_drop.update(v_cruise, long_control_active, sm["carState"].gasPressed, self.slc_target, DT_MDL)
 
     if force_stop_enabled and not self.override_force_stop:
       self.forcing_stop |= not sm["carState"].standstill
@@ -118,19 +103,11 @@ class FrogPilotVCruise:
 
       self.tracked_model_length = self.frogpilot_planner.model_length
 
-      targets = [min(self.csc_target, v_cruise)]
-      if frogpilot_toggles.speed_limit_controller and self.slc_target > 0:
-        slc_speed = max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff
-        targets.append(slc_speed)
-      else:
-        targets.append(v_cruise)
-      v_cruise = min([target if target >= CRUISING_SPEED else v_cruise for target in targets])
-
-      # If Tesla firmware autonomously dropped cruise (sign reading) and CSC is not
-      # actively managing speed for a curve, restore to the SLC floor so FrogPilot
-      # maintains the map-validated speed rather than following the sign misread.
-      if self.pcm_drop_timer > 0 and self.slc_target > 0 and not self.csc_controlling_speed:
-        slc_floor = max(self.slc.overridden_speed, self.slc_target + self.slc_offset) - v_ego_diff
-        v_cruise = max(v_cruise, slc_floor)
+      v_cruise = resolve_cruise_target(v_cruise, self.csc_target,
+                                       frogpilot_toggles.speed_limit_controller,
+                                       self.slc_target, self.slc_offset,
+                                       self.slc.overridden_speed, v_ego_diff,
+                                       self.pcm_drop.active, self.csc_controlling_speed,
+                                       CRUISING_SPEED)
 
     return v_cruise
