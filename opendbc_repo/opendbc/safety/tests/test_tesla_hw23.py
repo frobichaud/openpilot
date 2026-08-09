@@ -98,6 +98,11 @@ class TeslaLegacyLateralBase(common.CarSafetyTest, common.AngleSteeringSafetyTes
     values = {"DI_cruiseState": 2 if enable else 0, "DI_speedUnits": 1}  # 1 = KPH
     return self.packer_chassis.make_can_msg_safety("DI_state", self.chassis_bus, values)
 
+  def _toggle_aol(self, toggle_on):
+    # acc_main_on latches on cruise STANDBY (AOL gate re-enabled 2026-08)
+    values = {"DI_cruiseState": 1 if toggle_on else 0, "DI_speedUnits": 1}
+    return self.packer_chassis.make_can_msg_safety("DI_state", self.chassis_bus, values)
+
   def test_rx_hook(self):
     # Test angle command reception
     for i in range(5):
@@ -118,12 +123,15 @@ class TeslaLegacyLateralBase(common.CarSafetyTest, common.AngleSteeringSafetyTes
                                   self.safety.get_vehicle_speed_min, self.safety.get_vehicle_speed_max)
 
   def test_steering_wheel_disengage(self):
+    # Cooperative Steering: high hands-on level is handled by the Python override/blend
+    # logic (coopsteering.py) and intentionally does NOT disengage at the safety layer.
+    # Only a genuine EPAS fault (eac_status 0 with high angle rate error 9) disengages.
     for hands_on_level in range(4):
       for eac_status in range(8):
         for eac_error_code in range(16):
           self.safety.set_controls_allowed(True)
 
-          should_disengage = hands_on_level >= 3 or (eac_status == 0 and eac_error_code == 9)
+          should_disengage = eac_status == 0 and eac_error_code == 9
           self.assertTrue(self._rx(self._angle_meas_msg(0, hands_on_level=hands_on_level,
                                                         eac_status=eac_status, eac_error_code=eac_error_code)))
           self.assertNotEqual(should_disengage, self.safety.get_controls_allowed())
@@ -142,19 +150,37 @@ class TeslaLegacyLateralBase(common.CarSafetyTest, common.AngleSteeringSafetyTes
       self.assertEqual(should_tx, self._tx(self._angle_cmd_msg(0, state=steer_control_type)))
 
   def test_stock_lkas_passthrough(self):
-    no_lkas_msg = self._angle_cmd_msg(0, state=False)
-    no_lkas_msg_cam = self._angle_cmd_msg(0, state=True, bus=2)
-    lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['LANE_KEEP_ASSIST'], bus=2)
+    # Broadened stock steering detection (per dzid26 vtb): ANY non-NONE control type
+    # from the stock system latches while OP is disengaged (rising edge); OP yields
+    # (forward stock, block own TX) until the stock system returns to NONE.
+    none_cmd = self._angle_cmd_msg(0, state=False)
+    none_cmd_cam = self._angle_cmd_msg(0, state=False, bus=2)
 
-    # stock system sends no LKAS -> block forwarding, and OP is allowed to TX
-    self.assertEqual(1, self._rx(no_lkas_msg_cam))
-    self.assertEqual(-1, self.safety.safety_fwd_hook(2, no_lkas_msg_cam.addr))
-    self.assertTrue(self._tx(no_lkas_msg))
+    for ctype in ('ANGLE_CONTROL', 'LANE_KEEP_ASSIST', 'EMERGENCY_LANE_KEEP'):
+      stock_cmd_cam = self._angle_cmd_msg(0, state=self.steer_control_types[ctype], bus=2)
 
-    # stock system sends LKAS -> allow forwarding, and OP is not allowed to TX
-    self.assertEqual(1, self._rx(lkas_msg_cam))
-    self.assertEqual(0, self.safety.safety_fwd_hook(2, lkas_msg_cam.addr))
-    self.assertFalse(self._tx(no_lkas_msg))
+      # stock inactive -> impersonation: block forwarding, OP may TX
+      self.safety.set_controls_allowed(False)
+      self.assertTrue(self._rx(none_cmd_cam))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, none_cmd_cam.addr))
+      self.assertTrue(self._tx(none_cmd))
+
+      # stock steering rising edge while OP disengaged -> yield: forward stock, block OP TX
+      self.assertTrue(self._rx(stock_cmd_cam))
+      self.assertEqual(0, self.safety.safety_fwd_hook(2, stock_cmd_cam.addr))
+      self.assertFalse(self._tx(none_cmd))
+
+      # stock returns to NONE -> latch clears
+      self.assertTrue(self._rx(none_cmd_cam))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, none_cmd_cam.addr))
+      self.assertTrue(self._tx(none_cmd))
+
+      # rising edge while OP is engaged is ignored (OP keeps control)
+      self.safety.set_controls_allowed(True)
+      self.assertTrue(self._rx(stock_cmd_cam))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, stock_cmd_cam.addr))
+      self.assertTrue(self._tx(none_cmd))
+      self.assertTrue(self._rx(none_cmd_cam))
 
   def test_angle_cmd_when_enabled(self):
     # We properly test lateral acceleration and jerk below

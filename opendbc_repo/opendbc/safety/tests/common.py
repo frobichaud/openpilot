@@ -855,30 +855,31 @@ class AngleSteeringSafetyTest(VehicleSpeedSafetyTest):
 
     self._reset_angle_measurement(0)
     self._reset_speed_measurement(1)
-    angle_cmd = self.ANGLE_RATE_UP[0] / 2.0  # Use half of the max angle rate
+    # Half of the max angle rate; 0 for modes with VM-based limits (e.g. Tesla)
+    angle_cmd = self.ANGLE_RATE_UP[0] / 2.0 if self.ANGLE_RATE_UP else 0
 
     # Without alt exp, make sure steering is blocked
     self.safety.set_alternative_experience(0)
     self._set_prev_desired_angle(0)
-    self.assertFalse(self._tx(self._angle_cmd_msg(angle=angle_cmd, enabled=True)))
+    self.assertFalse(self._tx(self._angle_cmd_msg(angle_cmd, True)))
 
     # With alt exp, but without main on, steering should be blocked
     self.safety.set_alternative_experience(ALTERNATIVE_EXPERIENCE.ALWAYS_ON_LATERAL)
     self._rx(self._toggle_aol(False))
     self._set_prev_desired_angle(0)
-    self.assertFalse(self._tx(self._angle_cmd_msg(angle=angle_cmd, enabled=True)))
+    self.assertFalse(self._tx(self._angle_cmd_msg(angle_cmd, True)))
     self.assertFalse(self.safety.get_longitudinal_allowed())
 
     # With alt exp and main on, steering should be allowed
     self._rx(self._toggle_aol(True))
     self._set_prev_desired_angle(0)
-    self.assertTrue(self._tx(self._angle_cmd_msg(angle=angle_cmd, enabled=True)))
+    self.assertTrue(self._tx(self._angle_cmd_msg(angle_cmd, True)))
     self.assertFalse(self.safety.get_longitudinal_allowed())
 
     # Turn off main, steering should be blocked again
     self._rx(self._toggle_aol(False))
     self._set_prev_desired_angle(angle_cmd)
-    self.assertFalse(self._tx(self._angle_cmd_msg(angle=angle_cmd, enabled=True)))
+    self.assertFalse(self._tx(self._angle_cmd_msg(angle_cmd, True)))
 
 
 class SafetyTest(SafetyTestBase):

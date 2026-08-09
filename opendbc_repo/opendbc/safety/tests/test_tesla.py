@@ -267,20 +267,42 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
       self.assertEqual(should_tx, self._tx(self._angle_cmd_msg(0, state=steer_control_type)))
 
   def test_stock_lkas_passthrough(self):
-    # TODO: make these generic passthrough tests
-    no_lkas_msg = self._angle_cmd_msg(0, state=False)
-    no_lkas_msg_cam = self._angle_cmd_msg(0, state=True, bus=2)
-    lkas_msg_cam = self._angle_cmd_msg(0, state=self.steer_control_types['LANE_KEEP_ASSIST'], bus=2)
+    # Broadened stock steering detection (per dzid26 vtb): ANY non-NONE control type
+    # from the stock system latches while OP is disengaged (rising edge); OP yields
+    # (forward stock, block own TX) until the stock system returns to NONE.
+    # NOTE: modern DBC has counters on 0x488 — the stock ECU is its own counter
+    # stream, so camera-side messages get a dedicated packer to stay contiguous
+    cam_packer = CANPackerSafety("tesla_model3_party")
 
-    # stock system sends no LKAS -> no forwarding, and OP is allowed to TX
-    self.assertEqual(1, self._rx(no_lkas_msg_cam))
-    self.assertEqual(-1, self.safety.safety_fwd_hook(2, no_lkas_msg_cam.addr))
-    self.assertTrue(self._tx(no_lkas_msg))
+    def cam_cmd(state):
+      values = {"DAS_steeringAngleRequest": 0, "DAS_steeringControlType": state}
+      return cam_packer.make_can_msg_safety("DAS_steeringControl", 2, values)
 
-    # stock system sends LKAS -> forwarding, and OP is not allowed to TX
-    self.assertEqual(1, self._rx(lkas_msg_cam))
-    self.assertEqual(0, self.safety.safety_fwd_hook(2, lkas_msg_cam.addr))
-    self.assertFalse(self._tx(no_lkas_msg))
+    for ctype in ('ANGLE_CONTROL', 'LANE_KEEP_ASSIST', 'EMERGENCY_LANE_KEEP'):
+      stock_type = self.steer_control_types[ctype]
+
+      # stock inactive -> impersonation: block forwarding, OP may TX
+      self.safety.set_controls_allowed(False)
+      self.assertTrue(self._rx(cam_cmd(0)))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, MSG_DAS_steeringControl))
+      self.assertTrue(self._tx(self._angle_cmd_msg(0, state=False)))
+
+      # stock steering rising edge while OP disengaged -> yield: forward stock, block OP TX
+      self.assertTrue(self._rx(cam_cmd(stock_type)))
+      self.assertEqual(0, self.safety.safety_fwd_hook(2, MSG_DAS_steeringControl))
+      self.assertFalse(self._tx(self._angle_cmd_msg(0, state=False)))
+
+      # stock returns to NONE -> latch clears
+      self.assertTrue(self._rx(cam_cmd(0)))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, MSG_DAS_steeringControl))
+      self.assertTrue(self._tx(self._angle_cmd_msg(0, state=False)))
+
+      # rising edge while OP is engaged is ignored (OP keeps control)
+      self.safety.set_controls_allowed(True)
+      self.assertTrue(self._rx(cam_cmd(stock_type)))
+      self.assertEqual(-1, self.safety.safety_fwd_hook(2, MSG_DAS_steeringControl))
+      self.assertTrue(self._tx(self._angle_cmd_msg(0, state=False)))
+      self.assertTrue(self._rx(cam_cmd(0)))
 
   def test_angle_cmd_when_enabled(self):
     # We properly test lateral acceleration and jerk below
@@ -357,7 +379,7 @@ class TestTeslaSafetyBase(common.CarSafetyTest, common.AngleSteeringSafetyTest, 
   def _toggle_aol(self, toggle_on):
     # DI_state, DI_cruiseState is the cruise state, 1 is standby
     values = {"DI_cruiseState": 1 if toggle_on else 0}
-    return self.packer.make_can_msg_panda("DI_state", 0, values)
+    return self.packer.make_can_msg_safety("DI_state", 0, values)
 
 
 class TestTeslaStockSafety(TestTeslaSafetyBase):
