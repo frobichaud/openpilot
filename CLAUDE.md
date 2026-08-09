@@ -55,6 +55,10 @@ openpilot (this repo):
      lives in our opendbc fork now).
 4. Rebase opendbc and panda forks onto their sunnypilot masters (normal rebases,
    `--force-with-lease` push), then bump both submodule pointers here in one commit.
+5. Pushing this repo to origin: `.lfsconfig` points LFS at sunnypilot's GitLab,
+   which we cannot push to (and don't need to — all LFS objects are upstream's;
+   never add new LFS-tracked files here). Push with:
+   `GIT_LFS_SKIP_PUSH=1 git push --force-with-lease origin tesla-xnor-sunny`
 
 ## Tests
 
