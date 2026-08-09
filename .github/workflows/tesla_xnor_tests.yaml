@@ -39,7 +39,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
             gcc g++ libzmq3-dev libssl-dev capnproto libcapnp-dev pkg-config \
-            portaudio19-dev
+            portaudio19-dev qtbase5-dev qt5-qmake libusb-1.0-0-dev libeigen3-dev
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
