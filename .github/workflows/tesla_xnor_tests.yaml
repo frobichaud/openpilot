@@ -1,0 +1,62 @@
+name: tesla-xnor tests
+
+# Validates the Tesla legacy (Model S/X HW1/2/3) + MG support carried by the
+# frobichaud/opendbc fork on the sunnypilot-based tesla-xnor-sunny branch.
+# The opendbc fork is cloned directly (much cheaper than full submodule init)
+# and checked out at the exact SHA the opendbc_repo submodule pointer
+# references, so the badge reflects the branch's actual pinned code.
+# See CLAUDE.md on this branch.
+on:
+  push:
+    branches:
+      - 'tesla-xnor-*'
+  workflow_dispatch:
+
+concurrency:
+  group: tesla-xnor-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  opendbc-tesla-suites:
+    name: opendbc Tesla/MG suites
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+
+      - name: Resolve pinned opendbc submodule SHA
+        id: pin
+        run: echo "sha=$(git ls-tree HEAD opendbc_repo | awk '{print $3}')" >> "$GITHUB_OUTPUT"
+
+      - name: Clone opendbc fork at pinned SHA
+        run: |
+          git clone --branch tesla-sunny-xnor https://github.com/frobichaud/opendbc.git opendbc
+          cd opendbc
+          git checkout ${{ steps.pin.outputs.sha }} \
+            || { git fetch origin ${{ steps.pin.outputs.sha }} && git checkout ${{ steps.pin.outputs.sha }}; }
+
+      - name: Install system dependencies
+        run: sudo apt-get install -y --no-install-recommends gcc
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync python environment
+        working-directory: opendbc
+        run: uv sync --all-extras
+
+      - name: Tesla/MG test suites (libsafety self-compiles via cffi)
+        working-directory: opendbc
+        run: |
+          uv run python -m unittest -v \
+            opendbc.car.tesla.tests.test_coopsteering \
+            opendbc.car.tesla.tests.test_longcontrol \
+            opendbc.safety.tests.test_tesla \
+            opendbc.safety.tests.test_tesla_hw23 \
+            opendbc.safety.tests.test_tesla_hw1 \
+            opendbc.safety.tests.test_mg
