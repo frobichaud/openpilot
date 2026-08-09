@@ -34,6 +34,13 @@ The tip of the current train is tagged `train/<monYY>` (e.g. `train/aug26`).
    - `python3 -m py_compile` the touched Python files.
    - Verify no unique commit subjects were dropped:
      `comm -23 <(git log --format=%s $FIRST^..train/<PREV> | sort -u) <(git log --format=%s frogpilot/FrogPilot-Development..HEAD | sort -u)`
+   - Run the Tesla test suites locally (same as CI):
+     `uv run scons -j8 common/params_pyx.so` (needs zeromq: `brew install zeromq`, CPATH=/opt/homebrew/include)
+     `cd opendbc_repo && uv run --project .. scons -j8 opendbc/safety/tests/libsafety/`
+     `uv run --project .. python -m unittest opendbc.car.tesla.tests.test_coopsteering opendbc.safety.tests.test_tesla opendbc.safety.tests.test_tesla_hw23 opendbc.safety.tests.test_tesla_hw1 opendbc.safety.tests.test_mg`
+   - CI: pushing any `tesla-xnor-*` branch runs `.github/workflows/tesla_xnor_tests.yaml`
+     (coop steering tests + the four panda safety suites). Check with
+     `gh run list --repo frobichaud/openpilot --workflow "tesla-xnor tests"`.
 8. Tag the new tip `train/<monYY>`, then push branch and tags to `origin`.
 9. Optionally update the fork's default branch:
    `gh api -X PATCH repos/frobichaud/openpilot -f default_branch=tesla-xnor-c3-dev-<monYY>`

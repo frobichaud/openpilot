@@ -38,7 +38,8 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            gcc g++ libzmq3-dev libssl-dev capnproto libcapnp-dev pkg-config
+            gcc g++ libzmq3-dev libssl-dev capnproto libcapnp-dev pkg-config \
+            portaudio19-dev
 
       - name: Set up uv
         uses: astral-sh/setup-uv@v5
