@@ -66,8 +66,9 @@ static void tesla_legacy_rx_hook(const CANPacket_t *msg) {
       vehicle_moving = cruise_state != 3; // STANDSTILL
       pcm_cruise_check(cruise_engaged);
 
-      // AOL disabled for Tesla Legacy — focus on Cooperative Steering instead
-      // acc_main_on = (cruise_state == 1) || cruise_engaged;  // STANDBY or engaged
+      // FrogPilot variables
+      // AOL gate: still governed by the UI toggle via ALT_EXP_ALWAYS_ON_LATERAL in safety.h
+      acc_main_on = (cruise_state == 1) || cruise_engaged;  // STANDBY or engaged
    }
 
   if (msg->bus == 2U) {
