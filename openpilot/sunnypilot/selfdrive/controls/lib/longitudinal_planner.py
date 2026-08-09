@@ -8,10 +8,12 @@ See the LICENSE.md file in the root directory for more details.
 from openpilot.cereal import messaging, custom
 from opendbc.car import structs
 from openpilot.common.constants import CV
+from openpilot.common.realtime import DT_MDL
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX
 from openpilot.sunnypilot.selfdrive.controls.lib.dec.dec import DynamicExperimentalController
 from openpilot.sunnypilot.selfdrive.controls.lib.e2e_alerts_helper import E2EAlertsHelper
 from openpilot.sunnypilot.selfdrive.controls.lib.smart_cruise_control.smart_cruise_control import SmartCruiseControl
+from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.pcm_drop import PcmDropDetector
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_assist import SpeedLimitAssist
 from openpilot.sunnypilot.selfdrive.controls.lib.speed_limit.speed_limit_resolver import SpeedLimitResolver
 from openpilot.sunnypilot.selfdrive.selfdrived.events import EventsSP
@@ -29,6 +31,8 @@ class LongitudinalPlannerSP:
     self.scc = SmartCruiseControl()
     self.resolver = SpeedLimitResolver()
     self.sla = SpeedLimitAssist(CP, CP_SP)
+    self.pcm_drop = PcmDropDetector()
+    self.pcm_op_long = CP.openpilotLongitudinalControl and CP.pcmCruise
     self.generation = int(model_bundle.generation) if (model_bundle := get_active_bundle()) else None
     self.source = LongitudinalPlanSource.cruise
     self.e2e_alerts_helper = E2EAlertsHelper()
@@ -57,13 +61,30 @@ class LongitudinalPlannerSP:
     # Speed Limit Resolver
     self.resolver.update(v_ego, sm)
 
-    # Speed Limit Assist
     has_speed_limit = self.resolver.speed_limit_valid or self.resolver.speed_limit_last_valid
+
+    # Tesla PCM firmware-drop guard: on pcmCruise cars the firmware can drop
+    # v_cruise on a misread speed sign (e.g. 110 -> 40 km/h). Detect the drop
+    # BEFORE the SLA update (the drop shows up as a v_cruise_cluster change and
+    # would knock SLA out of its active state) and hold the SLA-resolved limit
+    # as the cruise floor while active.
+    pcm_drop_active = False
+    if self.pcm_op_long:
+      sla_floor = self.resolver.speed_limit_final_last if (self.sla.is_enabled and has_speed_limit) else 0.
+      pcm_drop_active = self.pcm_drop.update(v_cruise, long_enabled, CS.gasPressed, sla_floor, DT_MDL)
+
+    # Speed Limit Assist
     self.sla.update(long_enabled, long_override, v_ego, a_ego, v_cruise_cluster, self.resolver.speed_limit,
                     self.resolver.speed_limit_final_last, has_speed_limit, self.resolver.distance, self.events_sp)
 
+    v_cruise_target = v_cruise
+    if pcm_drop_active and self.resolver.speed_limit_final_last > 0.:
+      # hold the map/dashboard-validated limit instead of the misread firmware
+      # value; SCC/SLA sources still win below it through the min() arbitration
+      v_cruise_target = max(v_cruise, self.resolver.speed_limit_final_last)
+
     targets = {
-      LongitudinalPlanSource.cruise: (v_cruise, a_ego),
+      LongitudinalPlanSource.cruise: (v_cruise_target, a_ego),
       LongitudinalPlanSource.sccVision: (self.scc.vision.output_v_target, self.scc.vision.output_a_target),
       LongitudinalPlanSource.sccMap: (self.scc.map.output_v_target, self.scc.map.output_a_target),
       LongitudinalPlanSource.speedLimitAssist: (self.sla.output_v_target, self.sla.output_a_target),
