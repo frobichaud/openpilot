@@ -16,11 +16,17 @@ the car's firmware rather than openpilot:
    below the ceiling kills the override and stalking back up gets stuck at
    the ceiling until gas is pressed.
 
-3. resolve_cruise_target — final target arbitration: CSC capped at v_cruise
-   (never accelerate for a "curve"), SLC floor/override application with the
-   cluster-speed offset, sub-cruising-speed fallback, and the PCM-drop floor
-   restore (hold the map-validated SLC speed instead of the sign misread,
-   unless CSC is actively slowing for a curve).
+3. resolve_cruise_target — final target arbitration: the PCM-drop floor
+   restore (substitute the map-validated SLC speed for the sign misread), CSC
+   capped at that restored v_cruise (never accelerate for a "curve", but free
+   to slow below the floor when the curve calls for it), SLC floor/override
+   application with the cluster-speed offset, and sub-cruising-speed fallback.
+
+   The restore must happen *before* the CSC cap: on 2026-09-14 08:14 EDT the
+   firmware misread a sign and dropped cruise 99->40 kph at ~85 kph while SLC
+   held 90+10. The floor held for 10 s, then a curve activated CSC and the old
+   min(csc_target, v_cruise) picked the 40 kph misread over the 84 kph curve
+   target, braking at -2.3 m/s^2 instead of easing to ~72 kph.
 """
 from openpilot.common.constants import CV
 
@@ -63,15 +69,20 @@ def resolve_cruise_target(v_cruise: float, csc_target: float, slc_active: bool,
                           v_ego_diff: float, pcm_drop_active: bool, csc_controlling: bool,
                           cruising_speed: float) -> float:
   """Arbitrate the final cruise target from CSC, SLC, and the PCM-drop floor."""
-  targets = [min(csc_target, v_cruise)]
-  if slc_active and slc_target > 0:
-    targets.append(max(overridden_speed, slc_target + slc_offset) - v_ego_diff)
-  else:
-    targets.append(v_cruise)
-  v_cruise = min([target if target >= cruising_speed else v_cruise for target in targets])
+  slc_floor = max(overridden_speed, slc_target + slc_offset) - v_ego_diff
 
-  if pcm_drop_active and slc_target > 0 and not csc_controlling:
-    slc_floor = max(overridden_speed, slc_target + slc_offset) - v_ego_diff
+  # Firmware sign misread: hold the map-validated SLC speed in place of the
+  # dropped v_cruise. Done before the CSC cap so a curve slows toward the CSC
+  # target, not toward the misread.
+  if pcm_drop_active and slc_target > 0:
     v_cruise = max(v_cruise, slc_floor)
 
-  return v_cruise
+  # csc_target only carries meaning while CSC is controlling; otherwise the
+  # planner passes the raw (possibly misread) v_cruise through it.
+  targets = [min(csc_target, v_cruise) if csc_controlling else v_cruise]
+  if slc_active and slc_target > 0:
+    targets.append(slc_floor)
+  else:
+    targets.append(v_cruise)
+
+  return min([target if target >= cruising_speed else v_cruise for target in targets])

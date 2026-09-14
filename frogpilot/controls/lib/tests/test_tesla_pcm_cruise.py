@@ -92,7 +92,12 @@ class TestResolveCruiseTarget(unittest.TestCase):
                                  CRUISING_SPEED)
 
   def test_csc_slows_for_curve(self):
-    self.assertEqual(self.resolve(v_cruise=30.0, csc_target=20.0), 20.0)
+    self.assertEqual(self.resolve(v_cruise=30.0, csc_target=20.0, csc_controlling=True), 20.0)
+
+  def test_csc_target_ignored_when_not_controlling(self):
+    # planner passes v_cruise through csc_target when CSC is idle; a stale
+    # lower value must not leak into the target
+    self.assertEqual(self.resolve(v_cruise=30.0, csc_target=20.0, csc_controlling=False), 30.0)
 
   def test_csc_capped_at_v_cruise(self):
     # CSC must never accelerate above the driver's set speed
@@ -120,6 +125,28 @@ class TestResolveCruiseTarget(unittest.TestCase):
     got = self.resolve(v_cruise=20.0, csc_target=15.0, slc_active=True,
                        slc_target=28.0, pcm_drop=True, csc_controlling=True)
     self.assertEqual(got, 15.0)
+
+  def test_pcm_drop_csc_caps_at_slc_floor_not_misread(self):
+    # 2026-09-14 08:14 EDT drive: firmware misread dropped cruise 99->40 kph at
+    # ~85 kph, SLC held 90 + 10 offset. A curve then activated CSC with an
+    # 84 kph target. The car must ease toward 84, not brake for the 40 misread.
+    got = self.resolve(v_cruise=40 * KPH, csc_target=84 * KPH, slc_active=True,
+                       slc_target=90 * KPH, slc_offset=10 * KPH, pcm_drop=True,
+                       csc_controlling=True)
+    self.assertAlmostEqual(got, 84 * KPH)
+
+  def test_pcm_drop_csc_still_capped_at_slc_floor(self):
+    # CSC target above the held floor: never accelerate past the floor
+    got = self.resolve(v_cruise=40 * KPH, csc_target=110 * KPH, slc_active=True,
+                       slc_target=90 * KPH, slc_offset=10 * KPH, pcm_drop=True,
+                       csc_controlling=True)
+    self.assertAlmostEqual(got, 100 * KPH)
+
+  def test_pcm_drop_floor_restored_without_slc_active(self):
+    # show-speed-limits-only mode: slc_target set but SLC not enforcing
+    got = self.resolve(v_cruise=20.0, csc_target=20.0, slc_active=False,
+                       slc_target=28.0, pcm_drop=True)
+    self.assertEqual(got, 28.0)
 
   def test_v_ego_cluster_offset_applied(self):
     got = self.resolve(v_cruise=30.0, slc_active=True, slc_target=25.0, v_ego_diff=1.0)
