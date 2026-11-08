@@ -1,3 +1,11 @@
+## Fork status
+
+**tesla-xnor-c3 (FrogPilot + Tesla legacy):** [![tesla-xnor-c3](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml/badge.svg?branch=tesla-xnor-c3)](https://github.com/frobichaud/openpilot/actions/workflows/tesla_xnor_tests.yaml?query=branch%3Atesla-xnor-c3)
+
+Tesla Model S/X legacy (HW1/HW2/HW2.5/HW3) on a comma 3 with the xnor kit. See [TESLA.md](TESLA.md) for the feature commits.
+
+---
+
 <div align="center" style="text-align: center;">
 
 <h1>FrogPilot 🐸</h1>
