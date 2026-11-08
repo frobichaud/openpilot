@@ -8,6 +8,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import CRUIS
 from openpilot.frogpilot.common import frogpilot_utilities, frogpilot_variables
 from openpilot.frogpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.frogpilot.controls.lib.speed_limit_controller import SpeedLimitController
+from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import PcmDropDetector, pcm_drop_floor, slc_stalk_rearm
 
 class FrogPilotVCruise:
   def __init__(self, FrogPilotPlanner):
@@ -15,6 +16,9 @@ class FrogPilotVCruise:
 
     self.csc = CurveSpeedController(self)
     self.slc = SpeedLimitController(self)
+
+    # Tesla pcmCruise: hold the SLC speed after a firmware sign-misread cruise drop
+    self.pcm_drop = PcmDropDetector()
 
     self.csc_active = False
     self.csc_controlling_speed = False
@@ -33,18 +37,6 @@ class FrogPilotVCruise:
     v_ego_cluster = max(sm["carState"].vEgoCluster, v_ego)
     v_ego_diff = v_ego_cluster - v_ego
 
-    # FrogsGoMoo's Curve Speed Controller
-    self.csc.profile_learner.update(long_control_active, sm)
-
-    if long_control_active and frogpilot_toggles.curve_speed_controller:
-      self.csc_target = self.csc.update_target(v_cruise, v_ego)
-    else:
-      self.csc.target = None
-
-      self.csc_target = v_cruise
-
-    self.csc_active = self.csc_target < v_cruise
-
     # Pfeiferj's Speed Limit Controller
     if frogpilot_toggles.speed_limit_controller:
       self.slc.update_limits(self.frogpilot_planner.gps_position, now, time_validated, v_ego, sm)
@@ -62,6 +54,30 @@ class FrogPilotVCruise:
 
       self.slc_offset = 0
       self.slc_target = 0
+
+    # Tesla pcmCruise: the car's firmware owns v_cruise (see tesla_pcm_cruise.py)
+    if frogpilot_toggles.car_make == "tesla":
+      if frogpilot_toggles.speed_limit_controller:
+        # A stalk press above the SLC ceiling is always intentional: re-arm the SLC override
+        self.slc.overridden_speed = slc_stalk_rearm(self.slc.overridden_speed, v_cruise, v_cruise_cluster - v_cruise,
+                                                    self.slc_target, self.slc_offset)
+
+      # Restore the SLC speed after a firmware sign-misread drop, before CSC caps at v_cruise
+      self.pcm_drop.update(v_cruise, long_control_active, sm["carState"].gasPressed, self.slc_target, DT_MDL)
+      v_cruise = pcm_drop_floor(v_cruise, self.pcm_drop.active, self.slc_target, self.slc_offset,
+                                self.slc.overridden_speed, v_ego_diff)
+
+    # FrogsGoMoo's Curve Speed Controller
+    self.csc.profile_learner.update(long_control_active, sm)
+
+    if long_control_active and frogpilot_toggles.curve_speed_controller:
+      self.csc_target = self.csc.update_target(v_cruise, v_ego)
+    else:
+      self.csc.target = None
+
+      self.csc_target = v_cruise
+
+    self.csc_active = self.csc_target < v_cruise
 
     targets = [self.csc_target, v_cruise]
     if frogpilot_toggles.speed_limit_controller and self.slc_target > 0:
