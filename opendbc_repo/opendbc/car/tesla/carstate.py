@@ -234,18 +234,35 @@ class CarState(CarStateBase):
     # FrogPilot variables
     fp_ret = self.fp_ret
 
+    # Tesla's fused speed limit from Autopilot ECU
+    # On HW3-fingerprinted cars (incl. HW2.5 that fingerprints as HW3), AutopilotStatus (msg 921)
+    # is on bus 1 (vehicle), read via Bus.main. On other legacy cars it's on bus 2 (autopilot_party).
+    if self.CP.carFingerprint == CAR.TESLA_MODEL_S_HW3:
+      autopilot_status = can_parsers[Bus.main].vl["AutopilotStatus"]
+    else:
+      autopilot_status = cp_ap_party.vl["AutopilotStatus"]
+    fused_speed_limit = autopilot_status["DAS_fusedSpeedLimit"]
+    if 1 <= fused_speed_limit <= 150:
+      if speed_units == "MPH":
+        fused_speed_limit *= CV.MPH_TO_KPH
+      fp_ret.dashboardSpeedLimit = fused_speed_limit * CV.KPH_TO_MS
+
     return ret
 
   @staticmethod
   def get_can_parsers(CP):
     if CP.carFingerprint in LEGACY_CARS:
-      return {
+      parsers = {
         Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
         Bus.ap_party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.autopilot_party),
         Bus.pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CANBUS.powertrain),
         Bus.ap_pt: CANParser(DBC[CP.carFingerprint][Bus.pt], [], CANBUS.autopilot_powertrain),
         Bus.chassis: CANParser(DBC[CP.carFingerprint][Bus.chassis], [], CANBUS.chassis if CP.carFingerprint == CAR.TESLA_MODEL_S_HW3 else CANBUS.party),
       }
+      # HW3-fingerprinted cars broadcast AutopilotStatus (msg 921) on bus 1 (vehicle), not bus 2 (autopilot_party)
+      if CP.carFingerprint == CAR.TESLA_MODEL_S_HW3:
+        parsers[Bus.main] = CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.vehicle)
+      return parsers
 
     return {
       Bus.party: CANParser(DBC[CP.carFingerprint][Bus.party], [], CANBUS.party),
