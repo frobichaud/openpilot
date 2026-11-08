@@ -4,6 +4,7 @@ from opendbc.can import CANPacker
 from opendbc.car import Bus, DT_CTRL
 from opendbc.car.lateral import apply_steer_angle_limits_vm
 from opendbc.car.interfaces import CarControllerBase
+from opendbc.car.tesla.coopsteering import CoopSteering
 from opendbc.car.tesla.teslacan import TeslaCAN
 from opendbc.car.tesla.teslacan_legacy import TeslaCANRaven
 from opendbc.car.tesla.values import CarControllerParams, CANBUS, LEGACY_CARS, CAR, STEER_THRESHOLD
@@ -34,6 +35,7 @@ class CarController(CarControllerBase):
 
       self.packers = {CANBUS.party: CANPacker(dbc_names[Bus.party]), CANBUS.powertrain: CANPacker(dbc_names[Bus.pt])}
       self.tesla_can = TeslaCANRaven(self.packers)
+      self.coop_steering = CoopSteering()
       from opendbc.car.tesla.interface import CarInterface
       self.VM = VehicleModel(CarInterface.get_non_essential_params("TESLA_MODEL_S_HW3"))
 
@@ -51,19 +53,41 @@ class CarController(CarControllerBase):
     # Tesla EPS enforces disabling steering on heavy lateral override force.
     # When enabling in a tight curve, we wait until user reduces steering force to start steering.
     # Canceling is done on rising edge and is handled generically with CC.cruiseControl.cancel
-    lat_active = CC.latActive and CS.hands_on_level < 3
-
-    # FrogPilot variables
-    steering_angle = self.follow_driver(actuators.steeringAngleDeg, lat_active and not CC.enabled and self.follow_driver_enabled, CS)
+    if self.CP.carFingerprint in LEGACY_CARS:
+      # Cooperative steering handles hands_on_level override gracefully
+      lat_active = CC.latActive
+    else:
+      lat_active = CC.latActive and CS.hands_on_level < 3
 
     if self.frame % 2 == 0:
+      if self.CP.carFingerprint in LEGACY_CARS:
+        # Cooperative steering: while the driver overrides, release EPAS (NONE) and let the
+        # rate limiter track the physical angle; afterwards blend from the physical angle back
+        # to openpilot's desired angle over ~1.5s to avoid violent angle jumps.
+        angle_diff = abs(actuators.steeringAngleDeg - CS.out.steeringAngleDeg)
+        overriding = self.coop_steering.update(CS.out.steeringTorque, CS.hands_on_level, lat_active, angle_diff)
+        steer_active = lat_active and not overriding
+        blend = self.coop_steering.blend_factor
+        steering_angle = blend * actuators.steeringAngleDeg + (1.0 - blend) * CS.out.steeringAngleDeg if steer_active else CS.out.steeringAngleDeg
+      else:
+        # FrogPilot variables (upstream follow_driver A/B test; legacy cars use cooperative steering instead)
+        steer_active = lat_active
+        steering_angle = self.follow_driver(actuators.steeringAngleDeg, lat_active and not CC.enabled and self.follow_driver_enabled, CS)
+
       # Angular rate limit based on speed
       self.apply_angle_last = apply_steer_angle_limits_vm(steering_angle, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
-                                                          lat_active, CarControllerParams, self.VM)
+                                                          steer_active, CarControllerParams, self.VM)
 
       if self.CP.carFingerprint in LEGACY_CARS:
+        # Hard clamp: never command more than +/-20 deg from the physical wheel position
+        # Prevents EPAS faults and violent jerks (inspired by BogGyver)
+        max_angle_gap = 20.0
+        self.apply_angle_last = float(np.clip(self.apply_angle_last,
+                                              CS.out.steeringAngleDeg - max_angle_gap,
+                                              CS.out.steeringAngleDeg + max_angle_gap))
+
         cntr = (self.frame // 2) % 16
-        can_sends.append(self.tesla_can.create_steering_control(cntr, self.apply_angle_last, lat_active))
+        can_sends.append(self.tesla_can.create_steering_control(cntr, self.apply_angle_last, steer_active))
       else:
         can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active))
 
