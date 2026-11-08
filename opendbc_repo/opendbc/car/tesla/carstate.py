@@ -36,6 +36,7 @@ class CarState(CarStateBase):
 
     self.autopark = False
     self.autopark_prev = False
+    self.cruise_override = False
     self.cruise_enabled_prev = False
 
     self.hands_on_level = 0
@@ -189,6 +190,7 @@ class CarState(CarStateBase):
     speed_units = self.can_defines["DI_state"]["DI_speedUnits"].get(int(cp_chassis.vl["DI_state"]["DI_speedUnits"]), None)
 
     cruise_enabled = cruise_state in ("ENABLED", "STANDSTILL", "OVERRIDE", "PRE_FAULT", "PRE_CANCEL")
+    self.cruise_override = cruise_state == "OVERRIDE"
 
     # Match panda safety cruise engaged logic
     ret.cruiseState.enabled = cruise_enabled
