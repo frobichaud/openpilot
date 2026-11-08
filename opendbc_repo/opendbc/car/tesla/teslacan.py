@@ -1,5 +1,13 @@
 from opendbc.car.common.conversions import Conversions as CV
-from opendbc.car.tesla.values import CANBUS, CarControllerParams
+from opendbc.car.tesla.values import CANBUS, CarControllerParams, TeslaFlags
+
+
+def get_steer_ctrl_type(flags: int, ctrl_type: int) -> int:
+  # Returns the flipped signal value for DAS_steeringControlType on FSD 14
+  if flags & TeslaFlags.FSD_14:
+    return {1: 2, 2: 1}.get(ctrl_type, ctrl_type)
+  else:
+    return ctrl_type
 
 
 class TeslaCAN:
@@ -35,7 +43,7 @@ class TeslaCAN:
     }
     return self.packer.make_can_msg("DAS_control", CANBUS.party, values)
 
-  def create_steering_allowed(self):
+  def create_steering_allowed(self, counter=0):
     values = {
       "APS_eacAllow": 1,
     }

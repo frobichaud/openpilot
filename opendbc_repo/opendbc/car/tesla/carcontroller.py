@@ -5,7 +5,8 @@ from opendbc.car import Bus, DT_CTRL
 from opendbc.car.lateral import apply_steer_angle_limits_vm
 from opendbc.car.interfaces import CarControllerBase
 from opendbc.car.tesla.teslacan import TeslaCAN
-from opendbc.car.tesla.values import CarControllerParams, STEER_THRESHOLD
+from opendbc.car.tesla.teslacan_legacy import TeslaCANRaven
+from opendbc.car.tesla.values import CarControllerParams, CANBUS, LEGACY_CARS, CAR, STEER_THRESHOLD
 from opendbc.car.vehicle_model import VehicleModel
 
 
@@ -25,6 +26,17 @@ class CarController(CarControllerBase):
 
     # Vehicle model used for lateral limiting
     self.VM = VehicleModel(get_safety_CP())
+
+    if CP.carFingerprint in LEGACY_CARS:
+      if CP.carFingerprint in (CAR.TESLA_MODEL_S_HW1, CAR.TESLA_MODEL_X_HW1,):
+        CANBUS.powertrain = CANBUS.party
+        CANBUS.autopilot_powertrain = CANBUS.autopilot_party
+
+      self.packers = {CANBUS.party: CANPacker(dbc_names[Bus.party]), CANBUS.powertrain: CANPacker(dbc_names[Bus.pt])}
+      self.tesla_can = TeslaCANRaven(self.packers)
+      from opendbc.car.tesla.interface import CarInterface
+      self.VM = VehicleModel(CarInterface.get_non_essential_params("TESLA_MODEL_S_HW3"))
+
 
     # FrogPilot variables
     self.wheel_share = 1.0
@@ -49,10 +61,15 @@ class CarController(CarControllerBase):
       self.apply_angle_last = apply_steer_angle_limits_vm(steering_angle, self.apply_angle_last, CS.out.vEgoRaw, CS.out.steeringAngleDeg,
                                                           lat_active, CarControllerParams, self.VM)
 
-      can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active))
+      if self.CP.carFingerprint in LEGACY_CARS:
+        cntr = (self.frame // 2) % 16
+        can_sends.append(self.tesla_can.create_steering_control(cntr, self.apply_angle_last, lat_active))
+      else:
+        can_sends.append(self.tesla_can.create_steering_control(self.apply_angle_last, lat_active))
 
-    if self.frame % 10 == 0:
-      can_sends.append(self.tesla_can.create_steering_allowed())
+    if self.frame % 10 == 0 and self.CP.carFingerprint not in (CAR.TESLA_MODEL_S_HW1, CAR.TESLA_MODEL_X_HW1, ):
+      cntr = (self.frame // 10) % 16
+      can_sends.append(self.tesla_can.create_steering_allowed(cntr))
 
     # Longitudinal control
     if self.CP.openpilotLongitudinalControl:
