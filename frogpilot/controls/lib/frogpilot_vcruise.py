@@ -8,7 +8,7 @@ from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import CRUIS
 from openpilot.frogpilot.common import frogpilot_utilities, frogpilot_variables
 from openpilot.frogpilot.controls.lib.curve_speed_controller import CurveSpeedController
 from openpilot.frogpilot.controls.lib.speed_limit_controller import SpeedLimitController
-from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import PcmDropDetector, pcm_drop_floor, slc_stalk_rearm
+from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import PcmDropDetector, SlcAdopt, pcm_drop_floor, slc_stalk_rearm
 
 class FrogPilotVCruise:
   def __init__(self, FrogPilotPlanner):
@@ -19,6 +19,8 @@ class FrogPilotVCruise:
 
     # Tesla pcmCruise: hold the SLC speed after a firmware sign-misread cruise drop
     self.pcm_drop = PcmDropDetector()
+    # Tesla pcmCruise: adopt a confirmed higher speed limit on highway merges
+    self.slc_adopt = SlcAdopt()
 
     self.csc_active = False
     self.csc_controlling_speed = False
@@ -62,10 +64,16 @@ class FrogPilotVCruise:
         self.slc.overridden_speed = slc_stalk_rearm(self.slc.overridden_speed, v_cruise, v_cruise_cluster - v_cruise,
                                                     self.slc_target, self.slc_offset)
 
+      # Adopt a confirmed higher limit (ramp -> highway) instead of holding the old PCM speed
+      adopted_speed = self.slc_adopt.update(v_cruise, long_control_active and frogpilot_toggles.speed_limit_controller,
+                                            sm["carState"].gasPressed, self.slc_target, self.slc_offset)
+
       # Restore the SLC speed after a firmware sign-misread drop, before CSC caps at v_cruise
       self.pcm_drop.update(v_cruise, long_control_active, sm["carState"].gasPressed, self.slc_target, DT_MDL)
       v_cruise = pcm_drop_floor(v_cruise, self.pcm_drop.active, self.slc_target, self.slc_offset,
                                 self.slc.overridden_speed, v_ego_diff)
+      if adopted_speed > 0:
+        v_cruise = max(v_cruise, adopted_speed - v_ego_diff)
 
     # FrogsGoMoo's Curve Speed Controller
     self.csc.profile_learner.update(long_control_active, sm)
