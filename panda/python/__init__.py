@@ -131,7 +131,7 @@ class Panda:
   H7_DEVICES = [HW_TYPE_RED_PANDA, HW_TYPE_TRES, HW_TYPE_CUATRO, HW_TYPE_BODY]
 
   # FrogPilot variables
-  F4_DEVICES = [HW_TYPE_DOS]
+  F4_DEVICES = [HW_TYPE_WHITE, HW_TYPE_BLACK, HW_TYPE_DOS]  # white/black: xnor kit external panda
 
   SUPPORTED_DEVICES = H7_DEVICES + F4_DEVICES
 

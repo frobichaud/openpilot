@@ -52,6 +52,7 @@ struct board {
 // ******************* Definitions ********************
 // These should match the enums in cereal/log.capnp and __init__.py
 #define HW_TYPE_UNKNOWN 0U
+#define HW_TYPE_BLACK_PANDA 3U
 #define HW_TYPE_RED_PANDA 7U
 #define HW_TYPE_TRES 9U
 #define HW_TYPE_CUATRO 10U
@@ -63,6 +64,7 @@ struct board {
 #define CAN_MODE_NORMAL 0U
 #define CAN_MODE_OBD_CAN2 1U
 
+extern struct board board_black;
 extern struct board board_tres;
 extern struct board board_cuatro;
 extern struct board board_red;
