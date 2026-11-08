@@ -14,9 +14,10 @@ static int di_torque1_msg = 0x106U;
 static bool tesla_legacy_stock_aeb = false;
 
 // Only rising edges while controls are not allowed are considered for these systems:
-// TODO: Only LKAS (non-emergency) is currently supported since we've only seen it
-static bool tesla_legacy_stock_lkas = false;
-static bool tesla_legacy_stock_lkas_prev = false;
+// Car-initiated steering (LDA, ELDA, Autopark, LKAS, etc.) — broadened from LKAS-only
+// per dzid26/opendbc vtb branch. Detects any non-NONE steering control type.
+static bool tesla_legacy_stock_steering_control = false;
+static bool tesla_legacy_stock_steering_control_prev = false;
 
 static void tesla_legacy_rx_hook(const CANPacket_t *msg) {
 
@@ -26,12 +27,13 @@ static void tesla_legacy_rx_hook(const CANPacket_t *msg) {
     const int angle_meas_new = (((msg->data[4] & 0x3FU) << 8) | msg->data[5]) - 8192U;
     update_sample(&angle_meas, angle_meas_new);
 
-    const int hands_on_level = msg->data[4] >> 6;  // handsOnLevel
+    // hands_on_level (msg->data[4] >> 6) handled by cooperative steering in Python
     const int eac_status = msg->data[6] >> 5;      // eacStatus
     const int eac_error_code = msg->data[2] >> 4;  // eacErrorCode
 
-    // Disengage on normal user override, or if high angle rate fault from user overriding extremely quickly
-    steering_disengage = (hands_on_level >= 3) || ((eac_status == 0) && (eac_error_code == 9));
+    // Cooperative steering handles hands_on_level in Python (carcontroller.py) —
+    // only disengage on genuine EPAS hardware fault (high angle rate safety error)
+    steering_disengage = (eac_status == 0) && (eac_error_code == 9);
   }
 
   // Vehicle speed (ESP_B: ESP_vehicleSpeed)
@@ -79,16 +81,16 @@ static void tesla_legacy_rx_hook(const CANPacket_t *msg) {
     // DAS_steeringControl
     if (!tesla_external_panda && msg->addr == 0x488U) {
       int steering_control_type = msg->data[2] >> 6;
-      bool tesla_legacy_stock_lkas_now = steering_control_type == 2;  // "LANE_KEEP_ASSIST"
+      bool tesla_legacy_stock_steering_control_now = steering_control_type != 0;  // any non-NONE type
 
       // Only consider rising edges while controls are not allowed
-      if (tesla_legacy_stock_lkas_now && !tesla_legacy_stock_lkas_prev && !controls_allowed) {
-        tesla_legacy_stock_lkas = true;
+      if (tesla_legacy_stock_steering_control_now && !tesla_legacy_stock_steering_control_prev && !controls_allowed) {
+        tesla_legacy_stock_steering_control = true;
       }
-      if (!tesla_legacy_stock_lkas_now) {
-        tesla_legacy_stock_lkas = false;
+      if (!tesla_legacy_stock_steering_control_now) {
+        tesla_legacy_stock_steering_control = false;
       }
-      tesla_legacy_stock_lkas_prev = tesla_legacy_stock_lkas_now;
+      tesla_legacy_stock_steering_control_prev = tesla_legacy_stock_steering_control_now;
     }
   }
 }
@@ -135,8 +137,8 @@ static bool tesla_legacy_tx_hook(const CANPacket_t *msg) {
       violation = true;
     }
 
-    if (tesla_legacy_stock_lkas) {
-      // Don't allow any steering commands when stock LKAS is active
+    if (tesla_legacy_stock_steering_control) {
+      // Don't allow any steering commands when stock steering control is active
       violation = true;
     }
   }
@@ -184,7 +186,7 @@ static bool tesla_legacy_fwd_hook(int bus_num, int addr) {
     }
 
     // DAS_steeringControl
-    if (!tesla_external_panda && (addr == 0x488U) && !tesla_legacy_stock_lkas) {
+    if (!tesla_external_panda && (addr == 0x488U) && !tesla_legacy_stock_steering_control) {
       block_msg = true;
     }
 
@@ -211,8 +213,8 @@ static safety_config tesla_legacy_init(uint16_t param) {
 
   // Initialize state variables
   tesla_legacy_stock_aeb = false;
-  tesla_legacy_stock_lkas = false;
-  tesla_legacy_stock_lkas_prev = false;
+  tesla_legacy_stock_steering_control = false;
+  tesla_legacy_stock_steering_control_prev = false;
   chassis_bus = 0U;
   di_torque1_msg = 0x106U;
 
