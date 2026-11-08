@@ -1,0 +1,91 @@
+name: tesla-xnor tests
+
+# Validates the custom Tesla Legacy (Model S/X HW1/2/3) commit train:
+# cooperative steering behavior + panda safety suites. See CLAUDE.md.
+on:
+  push:
+    branches:
+      - 'tesla-xnor-*'
+      - 'wip/*'
+    tags:
+      - 'release/*'
+  pull_request:
+    paths:
+      - 'opendbc_repo/opendbc/car/tesla/**'
+      - 'opendbc_repo/opendbc/car/mg/**'
+      - 'opendbc_repo/opendbc/safety/**'
+      - 'opendbc_repo/opendbc/dbc/tesla*.dbc'
+      - 'opendbc_repo/opendbc/dbc/mg.dbc'
+      - 'panda/**'
+      - 'frogpilot/controls/**'
+      - 'cereal/custom.capnp'
+      - '.github/workflows/tesla_xnor_tests.yaml'
+  workflow_dispatch:
+
+concurrency:
+  group: tesla-xnor-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  tesla-safety-and-features:
+    name: coop steering + panda safety
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          lfs: false
+          submodules: false
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            gcc g++ libzmq3-dev libssl-dev capnproto libcapnp-dev pkg-config \
+            portaudio19-dev qtbase5-dev qt5-qmake libusb-1.0-0-dev libeigen3-dev
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Sync python environment
+        run: |
+          uv sync
+          uv pip install parameterized
+
+      - name: Build params_pyx (needed by car interface imports)
+        run: uv run scons -j"$(nproc)" common/params_pyx.so
+
+      - name: Build panda safety test library
+        working-directory: opendbc_repo
+        run: uv run --project .. scons -j"$(nproc)" opendbc/safety/tests/libsafety/
+
+      - name: Cooperative steering + longitudinal unit tests
+        working-directory: opendbc_repo
+        run: |
+          uv run --project .. python -m unittest -v \
+            opendbc.car.tesla.tests.test_coopsteering \
+            opendbc.car.tesla.tests.test_longcontrol
+
+      - name: Tesla PCM cruise logic tests (PCM-drop floor, SLC re-arm/adopt)
+        run: uv run python -m unittest -v openpilot.frogpilot.controls.lib.tests.test_tesla_pcm_cruise
+
+      - name: Panda safety suites (Tesla modern/legacy + MG)
+        working-directory: opendbc_repo
+        run: |
+          uv run --project .. python -m unittest \
+            opendbc.safety.tests.test_tesla \
+            opendbc.safety.tests.test_tesla_hw23 \
+            opendbc.safety.tests.test_tesla_hw1 \
+            opendbc.safety.tests.test_mg
+
+      - name: Syntax check custom python
+        run: |
+          uv run python -m py_compile \
+            opendbc_repo/opendbc/car/tesla/*.py \
+            opendbc_repo/opendbc/car/mg/*.py \
+            frogpilot/controls/frogpilot_card.py \
+            frogpilot/controls/lib/frogpilot_vcruise.py \
+            frogpilot/controls/lib/tesla_pcm_cruise.py \
+            frogpilot/controls/lib/speed_limit_filler.py
