@@ -27,6 +27,14 @@ the car's firmware rather than openpilot:
    for 10 s, then a curve activated CSC and the old min(csc_target, v_cruise)
    picked the 40 kph misread over the 84 kph curve target, braking at
    -2.3 m/s^2 instead of easing to ~72 kph.
+
+4. SlcAdopt — on a ramp -> highway merge the PCM keeps the old ramp set speed
+   while SLC's (confirmed) limit jumps up, so the car stays slow until the
+   driver stalks up. When the SLC target rises by more than PCM_DROP_THRESHOLD,
+   adopt SLC target + offset as a v_cruise floor. Confirmation comes for free:
+   SpeedLimitController only updates its target after the driver accepts a
+   higher limit when "confirm higher limits" is on. Cleared by gas, any stalk
+   change, disengage, or the limit dropping again.
 """
 from openpilot.common.constants import CV
 
@@ -70,3 +78,33 @@ def pcm_drop_floor(v_cruise: float, pcm_drop_active: bool, slc_target: float, sl
   if pcm_drop_active and slc_target > 0:
     return max(v_cruise, max(overridden_speed, slc_target + slc_offset) - v_ego_diff)
   return v_cruise
+
+
+ADOPT_CRUISE_CHANGE = 1.0 * CV.KPH_TO_MS  # any stalk step (5 kph) clears an adopted floor
+
+
+class SlcAdopt:
+  def __init__(self):
+    self.adopted_speed = 0.0
+    self.prev_slc_target = 0.0
+    self.prev_v_cruise = 0.0
+
+  @property
+  def active(self) -> bool:
+    return self.adopted_speed > 0
+
+  def update(self, v_cruise: float, long_control_active: bool, gas_pressed: bool,
+             slc_target: float, slc_offset: float) -> float:
+    """Return the adopted SLC speed floor (0 when inactive)."""
+    stalk_changed = abs(v_cruise - self.prev_v_cruise) > ADOPT_CRUISE_CHANGE
+    limit_dropped = 0 < slc_target < self.prev_slc_target
+
+    if gas_pressed or stalk_changed or limit_dropped or not long_control_active or slc_target <= 0:
+      self.adopted_speed = 0.0
+    elif self.prev_slc_target > 0 and slc_target - self.prev_slc_target > PCM_DROP_THRESHOLD and slc_target + slc_offset > v_cruise:
+      self.adopted_speed = slc_target + slc_offset
+
+    if slc_target > 0:
+      self.prev_slc_target = slc_target
+    self.prev_v_cruise = v_cruise
+    return self.adopted_speed

@@ -5,7 +5,7 @@ feeds FrogPilotVCruise's min(targets) arbitration."""
 import unittest
 
 from openpilot.common.constants import CV
-from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import (PCM_DROP_HOLD_TIME, PcmDropDetector,
+from openpilot.frogpilot.controls.lib.tesla_pcm_cruise import (PCM_DROP_HOLD_TIME, PcmDropDetector, SlcAdopt,
                                                                pcm_drop_floor, slc_stalk_rearm)
 
 DT = 0.05  # DT_MDL
@@ -150,6 +150,58 @@ class TestArbitrationScenarios(unittest.TestCase):
   def test_without_drop_misread_is_obeyed(self):
     # no drop detected (e.g. a stalk press): the lower cruise speed wins
     self.assertEqual(arbitrate(v_cruise=20.0, slc_active=True, slc_target=28.0), 20.0)
+
+
+class TestSlcAdopt(unittest.TestCase):
+  RAMP = 70 * KPH
+  HIGHWAY = 100 * KPH
+
+  def setUp(self):
+    self.adopt = SlcAdopt()
+    # on the ramp: PCM at 70, SLC confirmed 70
+    self.step(self.RAMP, self.RAMP)
+
+  def step(self, v_cruise, slc_target, slc_offset=0.0, active=True, gas=False):
+    return self.adopt.update(v_cruise, active, gas, slc_target, slc_offset)
+
+  def test_adopts_confirmed_higher_limit_on_merge(self):
+    self.assertAlmostEqual(self.step(self.RAMP, self.HIGHWAY), self.HIGHWAY)
+    # stays adopted while nothing changes
+    self.assertAlmostEqual(self.step(self.RAMP, self.HIGHWAY), self.HIGHWAY)
+
+  def test_includes_slc_offset(self):
+    self.assertAlmostEqual(self.step(self.RAMP, self.HIGHWAY, slc_offset=10 * KPH), 110 * KPH)
+
+  def test_small_limit_increase_ignored(self):
+    self.assertEqual(self.step(self.RAMP, self.RAMP + 5 * KPH), 0.0)
+
+  def test_no_adopt_when_cruise_already_above_limit(self):
+    self.step(120 * KPH, self.RAMP)  # driver stalked up first (clears), settle
+    self.step(120 * KPH, self.RAMP)
+    self.assertEqual(self.step(120 * KPH, self.HIGHWAY), 0.0)
+
+  def test_stalk_press_clears(self):
+    self.step(self.RAMP, self.HIGHWAY)
+    self.assertEqual(self.step(self.RAMP + 5 * KPH, self.HIGHWAY), 0.0)
+
+  def test_gas_clears(self):
+    self.step(self.RAMP, self.HIGHWAY)
+    self.assertEqual(self.step(self.RAMP, self.HIGHWAY, gas=True), 0.0)
+
+  def test_disengage_clears(self):
+    self.step(self.RAMP, self.HIGHWAY)
+    self.assertEqual(self.step(self.RAMP, self.HIGHWAY, active=False), 0.0)
+
+  def test_limit_drop_clears(self):
+    self.step(self.RAMP, self.HIGHWAY)
+    self.assertEqual(self.step(self.RAMP, 90 * KPH), 0.0)
+
+  def test_needs_a_previous_limit(self):
+    adopt = SlcAdopt()
+    self.assertEqual(adopt.update(self.RAMP, True, False, self.HIGHWAY, 0.0), 0.0)
+
+  def test_no_adopt_without_long_control(self):
+    self.assertEqual(self.step(self.RAMP, self.HIGHWAY, active=False), 0.0)
 
 
 if __name__ == "__main__":
