@@ -823,7 +823,8 @@ class AngleSteeringSafetyTest(VehicleSpeedSafetyTest):
     self._reset_angle_measurement(0)
     self._reset_speed_measurement(1)
     self._set_prev_desired_angle(0)
-    return self._angle_cmd_msg(self.ANGLE_RATE_UP[0] / 2.0, True)
+    # Half of the max angle rate; 0 for modes with VM-based limits (e.g. Tesla)
+    return self._angle_cmd_msg(self.ANGLE_RATE_UP[0] / 2.0 if self.ANGLE_RATE_UP else 0, True)
 
 
 class SafetyTest(SafetyTestBase):
